@@ -31,6 +31,7 @@ app.use('/', apiLimiter);
 // Auth & User routes
 app.use('/auth', authLimiter, authRoutes);
 app.use('/users', userRoutes);
+app.use('/profile', userRoutes);
 
 // Team 7 - Admin Routes
 app.use('/admin', authMiddleware, adminMiddleware, adminRoutes);

@@ -1,5 +1,6 @@
 const http = require('http');
 const jwt = require('jsonwebtoken');
+require('dotenv').config();
 const app = require('../src/server');
 const pool = require('../src/config/db');
 
@@ -12,7 +13,10 @@ async function request(path, options = {}) {
     const url = new URL(`${BASE_URL}${path}`);
     const reqOptions = {
       method: options.method || 'GET',
-      headers: options.headers || {},
+      headers: {
+        'Content-Type': 'application/json',
+        ...(options.headers || {}),
+      },
     };
 
     const req = http.request(url, reqOptions, (res) => {
@@ -64,17 +68,24 @@ async function runProfileTests() {
   }
 
   try {
-    // 1. Unauthenticated request to /users/profile should fail with 401
+    // 1. Unauthenticated request to /users/profile and /profile should fail with 401
     {
       const res = await request('/users/profile');
       assert(res.status === 401, 'Unauthenticated GET /users/profile returns 401');
+
+      const resDirect = await request('/profile');
+      assert(resDirect.status === 401, 'Unauthenticated GET /profile returns 401');
+
+      const resPut = await request('/profile', { method: 'PUT', body: { name: 'Unauthorized' } });
+      assert(resPut.status === 401, 'Unauthenticated PUT /profile returns 401');
     }
 
     // 2. Test profile with Hrutuja's user record in database
     {
-      const [[hrutujaRow]] = await pool.query(
-        "SELECT id, full_name, email, phone, role FROM users WHERE email = 'hrutujak1910@gmail.com' LIMIT 1;"
+      let [[hrutujaRow]] = await pool.query(
+        "SELECT id, full_name, email, phone, role FROM users WHERE phone = '8237921793' OR email LIKE '%hrutuja%' LIMIT 1;"
       );
+
       assert(Boolean(hrutujaRow), 'Hrutuja user exists in database');
 
       if (hrutujaRow) {
@@ -90,14 +101,14 @@ async function runProfileTests() {
 
         assert(res.status === 200, 'Authenticated request returns 200');
         assert(res.body.success === true, 'Response has success: true');
-        assert(res.body.user.name === 'Hrutuja Kodgirwar', 'Returned name matches database: Hrutuja Kodgirwar');
-        assert(res.body.user.email === 'hrutujak1910@gmail.com', 'Returned email matches database: hrutujak1910@gmail.com');
-        assert(res.body.user.phone === '8237921793', 'Returned phone matches database: 8237921793');
+        assert(res.body.user.name === hrutujaRow.full_name, `Returned name matches database: ${hrutujaRow.full_name}`);
+        assert(res.body.user.email === hrutujaRow.email, `Returned email matches database: ${hrutujaRow.email}`);
+        assert(res.body.user.phone === hrutujaRow.phone, `Returned phone matches database: ${hrutujaRow.phone}`);
         assert(res.body.user.createdAt !== undefined, 'Returned profile includes createdAt');
       }
     }
 
-    // 3. Test profile with a different user (e.g. Vikram Joshi) to prove dynamic behavior
+    // 3. Test profile with dynamic user (Vikram Joshi)
     {
       // Clean up previous test user if exists
       await pool.query("DELETE FROM users WHERE email = 'vikram.j@example.com';");
@@ -107,7 +118,7 @@ async function runProfileTests() {
         `INSERT INTO users (full_name, email, phone, password, role)
          VALUES ('Vikram Joshi', 'vikram.j@example.com', '9890123456', 'hash_test_pwd', 'passenger');`
       );
-      const testUserId = insertResult.insertId;
+      const testUserId = insertResult?.insertId || insertResult;
 
       const token = jwt.sign(
         { id: testUserId, email: 'vikram.j@example.com', role: 'passenger' },
@@ -124,6 +135,76 @@ async function runProfileTests() {
       assert(res.body.user.email === 'vikram.j@example.com', 'Dynamic email returns vikram.j@example.com');
       assert(res.body.user.phone === '9890123456', 'Dynamic phone returns 9890123456');
 
+      // 4. Test authenticated PUT /profile to update profile fields (including extensions)
+      const putRes = await request('/profile', {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${token}` },
+        body: {
+          name: 'Vikram A. Joshi',
+          phone: '9890999999',
+          gender: 'Male',
+          date_of_birth: '1990-05-15',
+          emergency_contact_name: 'Anita Joshi',
+          emergency_contact_phone: '9890111111',
+          preferred_class: '3A',
+          berth_preference: 'Lower',
+          food_preference: 'Non-vegetarian',
+          address: '42 MG Road',
+          city: 'Pune',
+          state: 'Maharashtra',
+          pincode: '411001',
+          id_type: 'Aadhaar Card',
+          id_number: '123456789012',
+        },
+      });
+
+      assert(putRes.status === 200, 'PUT /profile returns 200 on valid update');
+      assert(putRes.body.success === true, 'PUT /profile response has success: true');
+      assert(putRes.body.user.name === 'Vikram A. Joshi', 'Updated name in response is Vikram A. Joshi');
+      assert(putRes.body.user.phone === '9890999999', 'Updated phone in response is 9890999999');
+      assert(putRes.body.user.emergency_contact_name === 'Anita Joshi', 'Updated emergency contact name is Anita Joshi');
+      assert(putRes.body.user.emergency_contact_phone === '9890111111', 'Updated emergency contact phone is 9890111111');
+      assert(putRes.body.user.preferred_class === '3A', 'Updated preferred class is 3A');
+      assert(putRes.body.user.berth_preference === 'Lower', 'Updated berth preference is Lower');
+      assert(putRes.body.user.food_preference === 'Non-vegetarian', 'Updated food preference is Non-vegetarian');
+      assert(putRes.body.user.pincode === '411001', 'Updated pincode is 411001');
+
+      // 5. Test persistence on subsequent GET /profile
+      const getAgainRes = await request('/profile', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      assert(getAgainRes.status === 200, 'GET /profile after update returns 200');
+      assert(getAgainRes.body.user.name === 'Vikram A. Joshi', 'Persisted name matches update');
+      assert(getAgainRes.body.user.phone === '9890999999', 'Persisted phone matches update');
+      assert(getAgainRes.body.user.emergency_contact_name === 'Anita Joshi', 'Persisted emergency contact matches');
+      assert(getAgainRes.body.user.emergency_contact_phone === '9890111111', 'Persisted emergency phone matches');
+      assert(getAgainRes.body.user.preferred_class === '3A', 'Persisted preferred class matches');
+      assert(getAgainRes.body.user.berth_preference === 'Lower', 'Persisted berth preference matches update');
+      assert(getAgainRes.body.user.food_preference === 'Non-vegetarian', 'Persisted food preference matches update');
+
+      // 6. Test PUT /profile validation rejections
+      const invalidNameRes = await request('/profile', {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${token}` },
+        body: { name: 'A' },
+      });
+      assert(invalidNameRes.status === 400, 'PUT /profile returns 400 for name shorter than 2 characters');
+
+      const invalidEmergencyPhoneRes = await request('/profile', {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${token}` },
+        body: { emergency_contact_phone: '123' },
+      });
+      assert(invalidEmergencyPhoneRes.status === 400, 'PUT /profile returns 400 for invalid emergency phone');
+
+      const invalidPinRes = await request('/profile', {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${token}` },
+        body: { pincode: '123' },
+      });
+      assert(invalidPinRes.status === 400, 'PUT /profile returns 400 for invalid PIN code');
+
       // Clean up
       await pool.query("DELETE FROM users WHERE id = ?;", [testUserId]);
       assert(true, 'Temporary test user cleaned up');
@@ -133,12 +214,13 @@ async function runProfileTests() {
     console.log(`Profile Test Results: ${passed} PASSED, ${failed} FAILED`);
     console.log('====================================================\n');
   } finally {
-    server.close();
+    if (server) server.close();
   }
 
   if (failed > 0) {
     process.exit(1);
   }
+  process.exit(0);
 }
 
 runProfileTests().catch((err) => {
