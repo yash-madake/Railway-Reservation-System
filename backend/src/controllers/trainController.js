@@ -134,8 +134,73 @@ async function getTrainDetails(req, res) {
   }
 }
 
+/**
+ * Public network figures, counted from the database.
+ *
+ * The marketing page used to open with "12,480 trains running", "98.4% on-time",
+ * "2.4M daily passengers" and "1,840 connected routes" as literals. None of that
+ * was measured, and two of the four are not derivable from anything the system
+ * records — there is no on-time metric and no daily-passenger count, because
+ * there is no live running feed.
+ *
+ * So this returns only what can honestly be counted: entities in the tables. The
+ * two claims that had no basis are gone rather than replaced with a smaller
+ * fiction.
+ */
+async function getNetworkStats(req, res) {
+  try {
+    const pool = require('../config/db');
+
+    const [[counts]] = await pool.query(`
+      SELECT
+        (SELECT COUNT(*) FROM trains  WHERE status = 'active')                     AS trains,
+        (SELECT COUNT(*) FROM stations WHERE status = 'active')                     AS stations,
+        (SELECT COUNT(*) FROM train_classes)                                       AS travelClasses,
+        (SELECT COUNT(*) FROM coaches)                                             AS coaches,
+        (SELECT COUNT(*) FROM coach_seats)                                         AS berths
+    `);
+
+    // Busyest corridors, from the same stored procedure the admin dashboard reads.
+    // Seeded rather than derived from live bookings, so it is a database figure
+    // and not a claim about this deployment's traffic.
+    let popularRoutes = [];
+    try {
+      const [rows] = await pool.query('CALL get_popular_routes(4);');
+      popularRoutes = rows[0] ?? [];
+    } catch (err) {
+      // The procedure is optional seed data. Its absence must not take the whole
+      // endpoint down — the counts above are the part that matters.
+      console.error('get_popular_routes unavailable:', err.message);
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        counts: {
+          trains: Number(counts.trains ?? 0),
+          stations: Number(counts.stations ?? 0),
+          travelClasses: Number(counts.travelClasses ?? 0),
+          coaches: Number(counts.coaches ?? 0),
+          berths: Number(counts.berths ?? 0),
+        },
+        popularRoutes,
+      },
+    });
+  } catch (error) {
+    console.error('Error fetching network stats:', error);
+    return res.status(500).json({
+      success: false,
+      error: {
+        code: 'INTERNAL_SERVER_ERROR',
+        message: 'Could not read network statistics',
+      },
+    });
+  }
+}
+
 module.exports = {
   searchTrainsBetween,
   searchTrains,
   getTrainDetails,
+  getNetworkStats,
 };

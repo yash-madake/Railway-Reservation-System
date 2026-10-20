@@ -1,15 +1,27 @@
 -- ---------------------------------------------------------------------------
--- Yatrio . Team 5 . Payment procedures
+-- Payment procedures.
 --
--- The three routines the team assignment names: create_payment_record(),
--- confirm_payment() and process_refund(). They exist so the payment state
--- machine lives in one place, is atomic, and refuses the illegal moves rather
--- than leaving them to a caller to remember.
+-- Transactional payment rules that belong in the database, not in application
+-- code: the guards that must hold even if two requests race, and the writes
+-- that must land together or not at all.
 --
--- Amounts are paise throughout (PAYMENTS.md section 4).
+-- ## Normalised in migration 011
 --
--- Applied by database/migrations/*-create-payment-procedures.js and reversed by
--- the matching drop migration.
+-- `create_payment_record` used to take seven parameters describing the journey
+-- (train number, train name, both station codes, and three passenger fields) and
+-- copy them onto `payments`. Those were all derivable from the booking the
+-- payment belongs to, and `payments.booking_id` was populated on zero rows, so
+-- the duplication was both redundant and unchecked. The parameters are gone;
+-- the payment now names its booking and nothing else.
+--
+-- `process_refund` used to read `payments.refunded_amount` to decide how much
+-- was left to give back. That column duplicated SUM(refunds.amount) with
+-- nothing keeping the two in step, so it is now computed from `refunds` — the
+-- table that actually records the reversals.
+--
+-- The rules themselves are unchanged: same guards, same SQLSTATE codes, same
+-- refusal order. That is deliberate — they are covered by tests/db.test.js, and
+-- a normalisation change should not quietly alter behaviour.
 -- ---------------------------------------------------------------------------
 
 DROP PROCEDURE IF EXISTS `create_payment_record`;
@@ -19,10 +31,15 @@ DROP PROCEDURE IF EXISTS `process_refund`;
 -- ---------------------------------------------------------------------------
 -- create_payment_record -- record a freshly minted gateway order.
 --
--- A retry of the same booking mints a NEW order (Razorpay orders are
--- single-use), so this runs once per attempt and p_attempt counts up. Writes
--- the payment and its first transaction row atomically: if either fails,
--- neither is left behind.
+-- A retry of the same booking mints a NEW order (gateway orders are
+-- single-use), so this runs once per attempt and p_attempt counts up. Writes the
+-- payment and its first transaction row atomically: if either fails, neither is
+-- left behind.
+--
+-- The booking is referenced, not described. Everything a caller used to pass
+-- about the journey -- train, stations, passenger -- is reached through
+-- `p_booking_id`, and `booking_id` is NOT NULL and RESTRICT, so a payment can
+-- neither be orphaned nor outlive a deleted booking.
 --
 -- Returns the new payment_id.
 -- ---------------------------------------------------------------------------
@@ -35,20 +52,14 @@ CREATE PROCEDURE `create_payment_record`(
     IN  p_expires_at            DATETIME(3),
     IN  p_ttl_minutes           SMALLINT UNSIGNED,
     IN  p_booking_id            BIGINT UNSIGNED,
-    IN  p_train_no              VARCHAR(16),
-    IN  p_train_name            VARCHAR(96),
-    IN  p_from_station          VARCHAR(8),
-    IN  p_to_station            VARCHAR(8),
-    IN  p_passenger_name        VARCHAR(96),
-    IN  p_passenger_email       VARCHAR(160),
-    IN  p_passenger_contact     VARCHAR(32),
     OUT o_payment_id            BIGINT UNSIGNED
 )
     MODIFIES SQL DATA
 BEGIN
-    DECLARE v_expires_at DATETIME(3)    DEFAULT NULL;
+    DECLARE v_expires_at DATETIME(3)       DEFAULT NULL;
     DECLARE v_ttl        SMALLINT UNSIGNED DEFAULT 30;
     DECLARE v_attempt    SMALLINT UNSIGNED DEFAULT 1;
+    DECLARE v_ref_ok     TINYINT           DEFAULT 0;
 
     -- Last-resort guard against two concurrent calls for the same order. The
     -- explicit checks below name the constraint that was actually violated;
@@ -64,6 +75,17 @@ BEGIN
 
     IF p_gateway_order_id IS NULL OR p_gateway_order_id = '' THEN
         SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'GATEWAY_ORDER_ID_REQUIRED';
+    END IF;
+
+    -- The booking must exist. Checked by name rather than left to the foreign
+    -- key so the caller gets BOOKING_REF_MISMATCH instead of a raw 1452.
+    SELECT COUNT(*) INTO v_ref_ok
+      FROM `bookings`
+     WHERE `booking_id` = p_booking_id
+       AND `booking_ref`  = p_booking_ref;
+
+    IF v_ref_ok = 0 THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'BOOKING_REF_MISMATCH';
     END IF;
 
     -- The amount is whatever the server computed from the booking. Nothing the
@@ -91,7 +113,7 @@ BEGIN
     END IF;
 
     -- Yatrio's order lifetime is our rule, not a gateway limit: an order older
-    -- than ORDER_TTL_MINUTES is stale for us however long Razorpay would hold it.
+    -- than ORDER_TTL_MINUTES is stale for us however long the gateway holds it.
     SET v_expires_at = COALESCE(p_expires_at, DATE_ADD(NOW(3), INTERVAL v_ttl MINUTE));
 
     START TRANSACTION;
@@ -99,15 +121,11 @@ BEGIN
         INSERT INTO `payments` (
             `booking_ref`, `booking_id`, `gateway`, `gateway_order_id`,
             `amount`, `currency`, `status`, `attempt_number`, `expires_at`,
-            `train_no`, `train_name`, `from_station`, `to_station`,
-            `passenger_name`, `passenger_email`, `passenger_contact`,
             `created_at`, `updated_at`
         )
         VALUES (
             p_booking_ref, p_booking_id, 'razorpay', p_gateway_order_id,
             p_amount, COALESCE(p_currency, 'INR'), 'created', v_attempt, v_expires_at,
-            p_train_no, p_train_name, p_from_station, p_to_station,
-            p_passenger_name, p_passenger_email, p_passenger_contact,
             NOW(3), NOW(3)
         );
 
@@ -130,8 +148,7 @@ END;
 -- confirm_payment -- apply a gateway verification result to a payment.
 --
 -- Idempotent: replaying it with the same payment id rewrites the same rows and
--- returns the same result, which is what makes a repeated callback harmless
--- (`duplicate: true` in PAYMENTS.md section 4).
+-- returns the same result, which is what makes a repeated callback harmless.
 --
 -- Refuses, loudly:
 --   - capturing on a signature that did not verify -> recorded as
@@ -139,6 +156,8 @@ END;
 --   - a payment id already bound to a different order -> ORDER_MISMATCH
 --   - capturing a payment that already failed
 --   - anything at all on a refunded payment
+--
+-- Unchanged by migration 011: it never touched a dropped column.
 --
 -- Returns the payment_id.
 -- ---------------------------------------------------------------------------
@@ -231,6 +250,7 @@ BEGIN
                `signature_fingerprint` = p_signature_fingerprint,
                `captured_at`           = COALESCE(v_captured_at, `captured_at`),
                `failed_at`             = COALESCE(v_failed_at, `failed_at`),
+               `refunded_at`           = CASE WHEN v_status = 'refunded' THEN NOW(3) ELSE `refunded_at` END,
                `updated_at`            = NOW(3)
          WHERE `payment_id` = v_payment_id;
 
@@ -262,6 +282,12 @@ END;
 --
 -- Refuses a payment that is not captured, a second refund, and an amount above
 -- what is left of the capture. Returns the new refund_id.
+--
+-- The "what is left" figure is summed from `refunds` rather than read from
+-- `payments.refunded_amount`. That column duplicated this sum with no trigger
+-- keeping the two in step, so a second partial refund would have compared
+-- against a stale number. Summing inside the same transaction that holds the
+-- payment row FOR UPDATE makes the check and the write atomic.
 -- ---------------------------------------------------------------------------
 CREATE PROCEDURE `process_refund`(
     IN  p_payment_id        BIGINT UNSIGNED,
@@ -276,15 +302,15 @@ CREATE PROCEDURE `process_refund`(
 BEGIN
     DECLARE v_status   VARCHAR(32)     DEFAULT NULL;
     DECLARE v_amount   BIGINT UNSIGNED DEFAULT NULL;
-    DECLARE v_refunded BIGINT UNSIGNED DEFAULT NULL;
+    DECLARE v_refunded BIGINT UNSIGNED DEFAULT 0;
 
     DECLARE EXIT HANDLER FOR 1062
     BEGIN
         RESIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'DUPLICATE_GATEWAY_REFUND_ID';
     END;
 
-    SELECT `status`, `amount`, `refunded_amount`
-      INTO v_status, v_amount, v_refunded
+    SELECT `status`, `amount`
+      INTO v_status, v_amount
       FROM `payments`
      WHERE `payment_id` = p_payment_id
        FOR UPDATE;
@@ -305,6 +331,10 @@ BEGIN
         SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'AMOUNT_MUST_BE_POSITIVE';
     END IF;
 
+    SELECT COALESCE(SUM(`amount`), 0) INTO v_refunded
+      FROM `refunds`
+     WHERE `payment_id` = p_payment_id;
+
     IF p_amount > (v_amount - v_refunded) THEN
         SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'REFUND_EXCEEDS_CAPTURE';
     END IF;
@@ -324,19 +354,19 @@ BEGIN
 
         SET o_refund_id = LAST_INSERT_ID();
 
+        -- `refunded_amount` is gone, so the payment's own status is the only
+        -- thing to move. `refunded_at` records when; the amounts live in
+        -- `refunds` and are summed by v_payment_history.
         UPDATE `payments`
-           SET `refunded_amount` = `refunded_amount` + p_amount,
-               `status`          = 'refunded',
-               `refunded_at`     = NOW(3),
-               `updated_at`      = NOW(3)
+           SET `status`      = 'refunded',
+               `refunded_at` = NOW(3),
+               `updated_at`  = NOW(3)
          WHERE `payment_id` = p_payment_id;
 
-        -- Link the reversal onto the attempt it reverses, so the refund's
-        -- gateway id is guarded by UNIQUE (gateway_refund_id) here too.
         UPDATE `payment_transactions`
-           SET `gateway_refund_id` = p_gateway_refund_id,
-               `event`             = 'PAYMENT_REFUNDED',
+           SET `event`             = 'PAYMENT_REFUNDED',
                `status`            = 'refunded',
+               `gateway_refund_id` = p_gateway_refund_id,
                `updated_at`        = NOW(3)
          WHERE `payment_id` = p_payment_id;
 

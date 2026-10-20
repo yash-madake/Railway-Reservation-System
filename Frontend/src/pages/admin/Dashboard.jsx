@@ -75,20 +75,24 @@ export default function Dashboard() {
             </div>
 
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-                <StatTile 
-                    label="Estimated Revenue" 
-                    value={fare(kpis.estimatedRevenue * 100)} 
-                    trend="+Demo reporting"
-                    trendPositive={true}
+                {/* `trend` is not a StatTile prop — it takes `delta`, so
+                    "+Demo reporting" was never rendered at all. The KPI is
+                    derived from seat-availability snapshots rather than captured
+                    payments (see adminController.getDashboard), so the label says
+                    so rather than implying settled revenue. */}
+                <StatTile
+                    label="Revenue (estimated)"
+                    value={fare(kpis.estimatedRevenue * 100)}
+                    delta="From availability"
                 />
                 <StatTile 
                     label="Active Users" 
                     value={kpis.activeUsers} 
                 />
-                <StatTile 
-                    label="Occupancy Snapshot" 
-                    value={kpis.totalBookedSeats} 
-                    trend="Seats Booked"
+                <StatTile
+                    label="Occupancy Snapshot"
+                    value={kpis.totalBookedSeats}
+                    delta="Seats booked"
                 />
                 <StatTile 
                     label="System Health" 

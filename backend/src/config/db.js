@@ -78,7 +78,38 @@ async function query(sql, values, options = {}) {
         opts.replacements = values;
     }
 
-    return sequelize.query(sql, opts);
+    const result = await sequelize.query(sql, opts);
+
+    /**
+     * An INSERT answered the way mysql2 answers one.
+     *
+     * mysql2 returns a ResultSetHeader, so `const [r] = await query(...)`
+     * followed by `r.insertId` is how every mysql2 caller reads the new id.
+     * Sequelize's raw path hands back the id and the affected-row count as two
+     * bare numbers instead, so that same read is `undefined` on a perfectly
+     * successful insert -- which is how POST /auth/register answered with
+     * `data.id: undefined`, and why seedAdmin.js grew an unwrap of its own.
+     * Rebuild the header here so the surface this module documents is the one
+     * callers get. SELECTs and UPDATE/DELETE already arrive in a workable
+     * shape and are returned untouched.
+     */
+    if (/^\s*INSERT\b/i.test(sql)) {
+        const [insertId, affectedRows] = Array.isArray(result) ? result : [result, undefined];
+        return [
+            {
+                fieldCount: 0,
+                affectedRows: Number(affectedRows) || 0,
+                insertId: Number(insertId) || 0,
+                info: '',
+                serverStatus: 0,
+                warningStatus: 0,
+                changedRows: 0,
+            },
+            Array.isArray(result) ? result[1] : undefined,
+        ];
+    }
+
+    return result;
 }
 
 /** Identical to query() — the two differ only in protocol handling, not results. */

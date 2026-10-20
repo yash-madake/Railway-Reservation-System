@@ -9,7 +9,6 @@ import { RouteConnector } from '@/components/ui/RouteConnector';
 import { API_BASE_URL } from '@/api/client';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { cn } from '@/lib/utils';
-import { trains as mockTrains } from '@/data/trains';
 import { useBooking } from '@/context/BookingContext';
 
 export function Search() {
@@ -24,6 +23,7 @@ export function Search() {
 
   const [isLoading, setIsLoading] = useState(true);
   const [results, setResults] = useState([]);
+  const [loadError, setLoadError] = useState(null);
   const [selectedTypeFilter, setSelectedTypeFilter] = useState('All');
   const [availableOnly, setAvailableOnly] = useState(false);
   const [sortBy, setSortBy] = useState('departure');
@@ -35,49 +35,59 @@ export function Search() {
     return str.trim().toUpperCase();
   };
 
+  // Hoisted out of the effect: the result rows render outside it, and the route
+  // fallback below needs the same codes the request was built from.
+  const fromCode = extractCode(from);
+  const toCode = extractCode(to);
+
   useEffect(() => {
     let isMounted = true;
     setIsLoading(true);
-
-    const fromCode = extractCode(from);
-    const toCode = extractCode(to);
+    setLoadError(null);
 
     fetch(`${API_BASE_URL}/trains/between?from=${fromCode}&to=${toCode}&date=${date}`)
       .then((res) => {
-        if (!res.ok) throw new Error('Live search returned non-OK status');
+        if (!res.ok) throw new Error(`Live search returned ${res.status}.`);
         return res.json();
       })
       .then((data) => {
         if (!isMounted) return;
-        if (data?.data?.trains && data.data.trains.length > 0) {
-          const mapped = data.data.trains.map((t) => ({
-            id: String(t.trainId || t.trainNumber),
-            number: t.trainNumber,
-            name: t.trainName,
-            type: t.trainType,
-            source: { code: fromCode, name: data.data.from?.name || from },
-            destination: { code: toCode, name: data.data.to?.name || to },
-            departureTime: t.departure,
-            arrivalTime: t.arrival,
-            duration: t.duration,
-            distance: t.distanceKm,
-            classes: (t.classes || []).map((c) => ({
-              type: c.type,
-              name: c.name,
-              fare: c.fare,
-              availableSeats: c.availableSeats,
-              totalSeats: c.totalSeats,
-              status: c.status === 'AVAILABLE' ? `AVAILABLE ${c.availableSeats}` : c.status,
-            })),
-            pantryAvailable: t.pantryAvailable,
-          }));
-          setResults(mapped);
-        } else {
-          setResults(mockTrains || []);
-        }
+        const mapped = (data?.data?.trains ?? []).map((t) => ({
+          id: String(t.trainId || t.trainNumber),
+          number: t.trainNumber,
+          name: t.trainName,
+          type: t.trainType,
+          source: { code: fromCode, name: data.data.from?.name || from },
+          destination: { code: toCode, name: data.data.to?.name || to },
+          departureTime: t.departure,
+          arrivalTime: t.arrival,
+          duration: t.duration,
+          distance: t.distanceKm,
+          classes: (t.classes || []).map((c) => ({
+            type: c.type,
+            name: c.name,
+            fare: c.fare,
+            availableSeats: c.availableSeats,
+            totalSeats: c.totalSeats,
+            status: c.status === 'AVAILABLE' ? `AVAILABLE ${c.availableSeats}` : c.status,
+          })),
+          pantryAvailable: t.pantryAvailable,
+        }));
+        /**
+         * An empty result and a failed request both land on `[]`.
+         *
+         * Both used to fall back to two invented 12951/12002 trains, so a backend
+         * outage, a 400 from `validateStationPair`, and a genuinely empty route
+         * were all indistinguishable — and all looked like a working search
+         * result. An empty list is the honest answer; `loadError` carries the
+         * difference.
+         */
+        setResults(mapped);
       })
-      .catch(() => {
-        if (isMounted) setResults(mockTrains || []);
+      .catch((err) => {
+        if (!isMounted) return;
+        setResults([]);
+        setLoadError(err?.message ?? 'Could not reach the search service.');
       })
       .finally(() => {
         if (isMounted) setIsLoading(false);
@@ -86,12 +96,19 @@ export function Search() {
     return () => {
       isMounted = false;
     };
-  }, [from, to, date]);
+  }, [fromCode, toCode, date]);
 
+  /**
+   * Carry the chosen class into the booking.
+   *
+   * No `'3A'` fallback. Defaulting here meant a class card with no type booked a
+   * 3A ticket — quietly charging for a class nobody picked. The server resolves
+   * a missing class from the train instead, and returns a 400 if it cannot.
+   */
   const handleBookNow = (train, cls) => {
     setSelectedTrain(train);
-    setSelectedClass(cls?.type || '3A');
-    navigate(`/booking/passenger-details?train=${train.id}&class=${cls?.type || '3A'}`);
+    setSelectedClass(cls?.type ?? null);
+    navigate(`/booking/passenger-details?train=${train.number ?? train.id}${cls?.type ? `&class=${cls.type}` : ''}`);
   };
 
   const filteredTrains = results
@@ -229,21 +246,34 @@ export function Search() {
             ))
           ) : filteredTrains.length === 0 ? (
             <EmptyState
-              title="No trains matching criteria"
-              description="No trains match your selected filters. Adjust your station query, departure dates, or train type filters."
+              title={loadError ? 'Could not reach the search service' : 'No trains matching criteria'}
+              description={
+                loadError
+                  ? `${loadError} Nothing below is shown in its place — an empty result here means the search did not complete, not that no trains run.`
+                  : 'No trains match your selected filters. Adjust your station query, departure dates, or train type filters.'
+              }
               action={
-                <Button onClick={() => setSelectedTypeFilter('All')}>
-                  Clear Type Filters
-                </Button>
+                loadError ? (
+                  <Button onClick={() => navigate(0)}>Try again</Button>
+                ) : (
+                  <Button onClick={() => setSelectedTypeFilter('All')}>
+                    Clear Type Filters
+                  </Button>
+                )
               }
             />
           ) : (
             filteredTrains.map((train) => {
-              const defaultClasses = train.classes || [
-                { type: '3A', name: '3rd AC', fare: 820, status: 'AVAILABLE 42' },
-                { type: '2A', name: '2nd AC', fare: 1250, status: 'RAC 12' },
-                { type: 'SL', name: 'Sleeper', fare: 340, status: 'WL 18' },
-              ];
+              /**
+               * The classes the database returned, or nothing.
+               *
+               * This used to substitute three invented classes with invented
+               * fares and invented availability (3A ₹820 "AVAILABLE 42") whenever
+               * a train came back without them — and those invented fares are what
+               * `handleBookNow` carried into the booking draft. A train with no
+               * bookable class now says so instead.
+               */
+              const classes = train.classes ?? [];
 
               return (
                 <article
@@ -264,53 +294,66 @@ export function Search() {
 
                       {/* Route Connector Component */}
                       <RouteConnector
-                        fromCode={train.source?.code || 'NDLS'}
-                        toCode={train.destination?.code || 'MMCT'}
+                        fromCode={train.source?.code ?? fromCode}
+                        toCode={train.destination?.code ?? toCode}
                         fromName={train.source?.name || from}
                         toName={train.destination?.name || to}
-                        depTime={train.departureTime || '16:55'}
-                        arrTime={train.arrivalTime || '08:35'}
-                        duration={train.duration || '15h 40m'}
+                        depTime={train.departureTime ?? ''}
+                        arrTime={train.arrivalTime ?? ''}
+                        duration={train.duration ?? ''}
                       />
                     </div>
 
                     {/* Classes & Booking Action */}
                     <div className="flex flex-col justify-between gap-4 lg:w-72 shrink-0 border-t lg:border-t-0 lg:border-l border-line pt-4 lg:pt-0 lg:pl-6">
                       <div className="grid grid-cols-2 gap-2">
-                        {defaultClasses.map((cls, idx) => (
-                          <div
-                            key={idx}
-                            onClick={() => handleBookNow(train, cls)}
-                            className="rounded-control border border-line-mid bg-surface-sunken p-2.5 text-center cursor-pointer hover:border-royal hover:bg-blue-100/50 transition-colors"
-                          >
-                            <div className="text-caption font-bold text-ink">{cls.type}</div>
-                            <div className={cn(
-                              "text-caption font-semibold num mt-0.5",
-                              cls.status.includes('AVAILABLE') ? "text-success-strong" :
-                              cls.status.includes('RAC') ? "text-warning-strong" : "text-error-strong"
-                            )}>
-                              {cls.status}
+                        {classes.map((cls) => {
+                          // Optional-chained: a class from the database need not
+                          // carry a status, and calling `.includes` on undefined
+                          // would take the whole results list down.
+                          const status = String(cls.status ?? '');
+                          return (
+                            <div
+                              key={cls.type}
+                              onClick={() => handleBookNow(train, cls)}
+                              className="rounded-control border border-line-mid bg-surface-sunken p-2.5 text-center cursor-pointer hover:border-royal hover:bg-blue-100/50 transition-colors"
+                            >
+                              <div className="text-caption font-bold text-ink">{cls.type}</div>
+                              <div className={cn(
+                                "text-caption font-semibold num mt-0.5",
+                                status.includes('AVAILABLE') ? "text-success-strong" :
+                                status.includes('RAC') ? "text-warning-strong" : "text-error-strong"
+                              )}>
+                                {status || 'Status unavailable'}
+                              </div>
+                              <div className="num text-xs font-bold text-royal mt-1">
+                                {cls.fare != null ? `₹${cls.fare}` : '—'}
+                              </div>
                             </div>
-                            <div className="num text-xs font-bold text-royal mt-1">
-                              ₹{cls.fare}
-                            </div>
-                          </div>
-                        ))}
+                          );
+                        })}
+                        {classes.length === 0 && (
+                          <p className="col-span-2 text-caption text-ink-soft">
+                            No bookable classes returned for this train.
+                          </p>
+                        )}
                       </div>
 
                       <div className="flex gap-2 mt-auto">
-                        <Link to={`/trains/${train.id}`} className="flex-1">
+                        <Link to={`/trains/${train.number ?? train.id}`} className="flex-1">
                           <Button variant="secondary" size="sm" className="w-full">
                             Details
                           </Button>
                         </Link>
-                        <Button
-                          size="sm"
-                          className="flex-1"
-                          onClick={() => handleBookNow(train, defaultClasses[0])}
-                        >
-                          Book Now
-                        </Button>
+                        {classes.length > 0 && (
+                          <Button
+                            size="sm"
+                            className="flex-1"
+                            onClick={() => handleBookNow(train, classes[0])}
+                          >
+                            Book Now
+                          </Button>
+                        )}
                       </div>
                     </div>
                   </div>

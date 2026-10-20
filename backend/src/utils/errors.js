@@ -17,6 +17,7 @@ class HttpError extends Error {
 }
 
 const badRequest = (message, field) => new HttpError(400, 'BAD_REQUEST', message, { field })
+const forbidden = (message, code = 'FORBIDDEN') => new HttpError(403, code, message)
 const notFound = (message) => new HttpError(404, 'NOT_FOUND', message)
 const conflict = (message, code = 'CONFLICT') => new HttpError(409, code, message)
 const upstream = (message, details) => new HttpError(502, 'GATEWAY_ERROR', message, { details })
@@ -44,4 +45,4 @@ function errorHandler(err, req, res, _next) {
   })
 }
 
-module.exports = { HttpError, badRequest, notFound, conflict, upstream, asyncHandler, errorHandler }
+module.exports = { HttpError, badRequest, forbidden, notFound, conflict, upstream, asyncHandler, errorHandler }

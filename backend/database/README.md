@@ -97,9 +97,11 @@ Seven teams, one schema. **Own your tables; leave everyone else's alone.**
 | --- | --- | --- | --- |
 | T1 | Auth | `users` | **created** |
 | T2 | Search | `stations`, `trains`, `train_routes`, `train_running_days`, `train_classes` | **created and seeded** |
-| T3 | Availability | `train_schedules`, `seat_classes`, `coaches`, `coach_seats`, `quotas`, `fares`, `availability_snapshots` | not created yet |
+| T3 | Availability | `train_schedules`, `seat_classes`, `quotas`, `fares`, `availability_snapshots` | not created yet |
+| **T3/T5** | **Seat inventory** | **`coaches`, `coach_seats`** (built by T5 against T3's contract) | **created and seeded** |
 | T4 | Booking | `bookings`, `booking_passengers`, `booking_segments`, `seat_allocations`, `booking_status`, `cancellations` | not created yet |
 | **T5** | **Payment** | **`payments`, `payment_transactions`, `refunds`, `payment_methods`** | **created and seeded** |
+| **T5** | **Seat holds** | **`seat_inventory`, `seat_holds`** | **created** |
 | T6 | PNR / Live | `pnr_records`, `pnr_passengers`, `train_live_status`, `train_locations`, `train_status_history` | not created yet |
 | T7 | Admin / Audit | `audit_logs`, `api_request_logs`, `railway_audit_logs` | **created** |
 
@@ -108,6 +110,50 @@ Team 4's `bookings` is the one that matters to others, because
 `payments.booking_id` is indexed and **waiting** for it.
 [`PAYMENTS.md`](../../PAYMENTS.md) §12.8 has the `ALTER TABLE` that closes that
 loop.
+
+## `coaches`, `coach_seats`, `seat_inventory`, `seat_holds` — Team 5
+
+A berth is booked for a **run of adjacent segments**, not for a whole journey, so
+it can be sold again from the next station along. Occupancy is a bitmask with one
+bit per segment; two bookings share a berth exactly when their masks do not
+intersect.
+
+This sits in Team 5's slice because it is bound to the payment window, but it is
+the half of booking that can be made correct without `bookings`. When `bookings`
+and the rest of Team 3/4's schema land, `seat_holds.booking_ref` becomes a real
+foreign key and `train_classes.available_seats` — a static seed pair that never
+tracked a booking — can be dropped in favour of counting live masks.
+
+| Table | Grain | Key columns |
+| --- | --- | --- |
+| `coaches` | one carriage per (train, class) | `coach_id`; UNIQUE (`train_id`, `class_code`, `coach_code`) |
+| `coach_seats` | one berth per coach | `seat_id`; UNIQUE (`coach_id`, `seat_code`) |
+| `seat_inventory` | one row per **seat per journey date** | UNIQUE (`seat_id`, `departure_date`); `segment_mask BIGINT UNSIGNED` |
+| `seat_holds` | one row per booking per seat | `from_stop_seq`, `to_stop_seq`, `segment_mask`, `status`, `expires_at` |
+
+Indexes:
+
+| Name | Columns | Why |
+| --- | --- | --- |
+| `idx_seat_holds_seat_date` | `seat_id`, `departure_date` | **Deliberately not unique.** A seat has several concurrent rows whenever their segments are disjoint. Uniqueness lives in `seat_inventory`. |
+| `idx_seat_holds_booking_ref` | `booking_ref` | Release and confirm address a whole booking at once |
+| `idx_seat_holds_expiry` | `status`, `expires_at` | The sweeper's only query |
+| `chk_seat_holds_segment_span` | CHECK | `to > from` and the span fits in 64 bits |
+
+`seat_inventory` is the seat lock. A claim is one conditional UPDATE —
+`SET segment_mask = segment_mask | :mask WHERE ... AND (segment_mask & :mask) = 0`
+— which MySQL evaluates under the row lock, so there is no read-then-write window.
+
+Berths are seeded to match each class's `total_seats` exactly (5,134 across the
+9 seeded trains), so availability can be derived by counting masks with a bit set
+rather than read off a static counter.
+
+See [`PAYMENTS.md`](../../PAYMENTS.md) §12.9 for the bitmask encoding, the
+release rule and the pro-rata fare model.
+
+See
+[`PAYMENTS.md`](../../PAYMENTS.md) §12.9 for why, and §5 for the transaction
+that makes a multi-seat booking all-or-nothing.
 
 ### Everything in the schema
 

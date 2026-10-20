@@ -55,7 +55,6 @@ class Payment extends Model {
           allowNull: false,
           comment: 'paise — the amount actually charged',
         },
-        refundedAmount: { type: DataTypes.BIGINT.UNSIGNED, allowNull: false, defaultValue: 0 },
         currency: { type: DataTypes.STRING(3), allowNull: false, defaultValue: 'INR' },
 
         /* ---- state ---- */
@@ -84,13 +83,18 @@ class Payment extends Model {
         expiresAt: { type: DataTypes.DATE(3), allowNull: true },
 
         /* ---- denormalised for history rendering (PAYMENTS.md §4) ---- */
-        trainNo: { type: DataTypes.STRING(16), allowNull: true },
-        trainName: { type: DataTypes.STRING(96), allowNull: true },
-        fromStation: { type: DataTypes.STRING(8), allowNull: true },
-        toStation: { type: DataTypes.STRING(8), allowNull: true },
-        passengerName: { type: DataTypes.STRING(96), allowNull: true },
-        passengerEmail: { type: DataTypes.STRING(160), allowNull: true },
-        passengerContact: { type: DataTypes.STRING(32), allowNull: true },
+        /*
+         * The journey this payment settles is reached through `bookingId`.
+         *
+         * Seven columns were dropped here in migration 011 — trainNo, trainName,
+         * fromStation, toStation, passengerName, passengerEmail and
+         * passengerContact — because they were copies of the booking. The
+         * `bookingId` foreign key existed the whole time and was populated on
+         * zero rows, so the duplication was what the application actually used.
+         *
+         * `refundedAmount` went too: it duplicated SUM(refunds.amount) with no
+         * trigger keeping the two in step. `v_payment_history` derives it.
+         */
 
         capturedAt: { type: DataTypes.DATE(3), allowNull: true },
         failedAt: { type: DataTypes.DATE(3), allowNull: true },

@@ -97,13 +97,40 @@ export function Profile() {
 
   const currentUser = profileData || authUser;
   const displayName = currentUser?.name || currentUser?.full_name || 'Passenger';
-  const displayEmail = currentUser?.email || 'user@yatrio.com';
+
+  /**
+   * Shown as "not recorded" rather than filled in.
+   *
+   * These used to fall back to `user@yatrio.com` and `+91 98765 43210`. Both
+   * columns are NOT NULL in `users` and are returned by `GET /users/profile`,
+   * so those branches only fire when the fetch failed — at which point showing
+   * a plausible-looking address and phone number is exactly the wrong answer.
+   */
+  const displayEmail = currentUser?.email || 'Not recorded';
   const rawPhone = currentUser?.phone || '';
   const displayPhone = rawPhone
     ? rawPhone.startsWith('+91')
       ? rawPhone
       : `+91 ${rawPhone}`
-    : '+91 98765 43210';
+    : 'Not recorded';
+
+  /**
+   * The account's real creation date.
+   *
+   * Was a literal "Member since Oct 2026" on every profile, including accounts
+   * created years apart. `AuthContext` already normalises this into
+   * `user.createdAt` from the profile response, so the data was in hand and
+   * being ignored.
+   */
+  const memberSince = (() => {
+    const raw = currentUser?.createdAt ?? currentUser?.created_at ?? profileData?.createdAt;
+    if (!raw) return null;
+    const d = new Date(raw);
+    return Number.isNaN(d.getTime())
+      ? null
+      : d.toLocaleDateString('en-IN', { month: 'short', year: 'numeric' });
+  })();
+
   const avatarInitial = displayName.trim().charAt(0).toUpperCase() || 'P';
 
   const handleStartEdit = () => {
@@ -250,16 +277,20 @@ export function Profile() {
                     variant="outline"
                     className="border-white/40 text-paper font-semibold bg-white/15"
                   >
-                    Passenger Account
+                    {currentUser?.role ? `${String(currentUser.role).charAt(0).toUpperCase() + String(currentUser.role).slice(1)} Account` : 'Passenger Account'}
                   </Badge>
                 </div>
                 <p className="text-caption text-paper/90 font-medium" id="profile-display-email">
                   {displayEmail}
                 </p>
                 <div className="flex items-center justify-center sm:justify-start gap-3 text-xs text-paper/80 pt-1">
-                  <span id="profile-display-phone">{displayPhone}</span>
-                  <span>•</span>
-                  <span>Yatrio Member</span>
+                  {rawPhone && (
+                    <>
+                      <span id="profile-display-phone">{displayPhone}</span>
+                      <span>•</span>
+                    </>
+                  )}
+                  <span>{memberSince ? `Member since ${memberSince}` : 'Yatrio Member'}</span>
                 </div>
               </div>
             </div>
@@ -683,13 +714,32 @@ export function Profile() {
                     )}
                   </div>
 
-                  {/* Account Verification Status */}
+                  {/* Account Verification & Security Status (Backed by Real Data) */}
                   <div className="p-4 rounded-control bg-fog/30 border border-line space-y-3">
                     <span className="text-eyebrow font-semibold uppercase tracking-[0.16em] text-ink-soft block">
-                      Verification Status
+                      Account & Verification Status
                     </span>
                     <div className="space-y-2 text-sm">
                       <div className="flex items-center gap-2">
+                        {currentUser?.status === 'active' ? (
+                          <>
+                            <CheckCircle2 className="size-4 text-emerald-600 shrink-0" />
+                            <div>
+                              <span className="font-medium text-ink block">Account Active</span>
+                              <span className="text-caption text-ink-soft block">This account can book and pay.</span>
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <Shield className="size-4 text-amber-600 shrink-0" />
+                            <div>
+                              <span className="font-medium text-ink block">Account: {currentUser?.status ?? 'unknown'}</span>
+                              <span className="text-caption text-ink-soft block">This account cannot book until it is reactivated.</span>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2 pt-1 border-t border-line/60">
                         {currentUser?.is_email_verified ? (
                           <>
                             <CheckCircle2 className="size-4 text-emerald-600 shrink-0" />

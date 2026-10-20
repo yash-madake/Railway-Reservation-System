@@ -1,31 +1,73 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Logo } from '@/components/layout/Logo';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import { Alert } from '@/components/ui/Alert';
+import { EmailVerification } from '@/components/auth/EmailVerification';
 import { useAuth } from '@/context/AuthContext';
+import { API_BASE_URL } from '@/api/client';
 export function Login() {
     const [showPassword, setShowPassword] = useState(false);
     const [error, setError] = useState('');
+    const [notice, setNotice] = useState('');
     const [isLoading, setIsLoading] = useState(false);
+    // Set when the password was right but the email has never been confirmed.
+    const [pendingEmail, setPendingEmail] = useState(null);
     const { login } = useAuth();
     const navigate = useNavigate();
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
+
+    // Real network counts for the side panel, so it stops claiming 99.98%
+    // uptime across 1,840 stations.
+    const [counts, setCounts] = useState(null);
+
+    useEffect(() => {
+        let isMounted = true;
+        fetch(`${API_BASE_URL}/trains/stats`)
+            .then((res) => (res.ok ? res.json() : Promise.reject(new Error(`stats ${res.status}`))))
+            .then((body) => {
+                if (isMounted) setCounts(body?.data?.counts ?? null);
+            })
+            .catch(() => {
+                /* the panel falls back to an honest "unavailable" */
+            });
+        return () => {
+            isMounted = false;
+        };
+    }, []);
     const handleSubmit = async (e) => {
         e.preventDefault();
         setError('');
+        setNotice('');
         setIsLoading(true);
         try {
             await login(email, password);
             navigate('/search');
         }
         catch (err) {
-            setError(err.message || 'Invalid credentials');
+            if (err.code === 'EMAIL_NOT_VERIFIED') {
+                // Right password, unconfirmed email: go to the code screen.
+                setPendingEmail(err.email || email.trim());
+            }
+            else {
+                setError(err.message || 'Invalid credentials');
+            }
         }
         finally {
             setIsLoading(false);
+        }
+    };
+    // The code was accepted, so the user is already signed in.
+    const handleVerified = (result) => {
+        if (result?.alreadyVerified) {
+            setPendingEmail(null);
+            setPassword('');
+            setNotice('Your email is already verified. Please sign in.');
+        }
+        else {
+            navigate('/search');
         }
     };
     return (<div className="min-h-[calc(100vh-4rem)] grid lg:grid-cols-2">
@@ -33,11 +75,20 @@ export function Login() {
       <div className="flex flex-col justify-center px-6 py-12 sm:px-12 lg:px-16 max-w-form mx-auto w-full">
         <div className="mb-8">
           <Logo size="md" className="mb-6"/>
-          <h1 className="text-h2 font-bold tracking-tight text-ink">Sign In</h1>
+          <h1 className="text-h2 font-bold tracking-tight text-ink">
+            {pendingEmail ? 'Verify your email' : 'Sign In'}
+          </h1>
           <p className="mt-2 text-body text-ink-soft">
-            Access your tickets, manage trips, and track live bookings.
+            {pendingEmail
+            ? `Your email address hasn't been confirmed yet. Enter the 6-digit code sent to ${pendingEmail}.`
+            : 'Access your tickets, manage trips, and track live bookings.'}
           </p>
         </div>
+
+        {pendingEmail ? (<EmailVerification email={pendingEmail} sendOnMount onVerified={handleVerified} onBack={() => setPendingEmail(null)} backLabel="Back to sign in"/>) : (<>
+        {notice && (<Alert variant="success" title="Email verified" className="mb-6">
+            {notice}
+          </Alert>)}
 
         {error && (<Alert variant="error" title="Authentication failed" className="mb-6">
             {error}
@@ -59,27 +110,17 @@ export function Login() {
             Sign In
           </Button>
 
-          {/* Quick Demo Access Credentials */}
-          <div className="pt-4 border-t border-line mt-6">
-            <p className="text-eyebrow font-semibold uppercase tracking-[0.16em] text-ink-soft text-center mb-3">
-              One-Click Demo Credentials
-            </p>
-            <div className="grid grid-cols-2 gap-2">
-              <button type="button" onClick={() => {
-            setEmail('rahul.sharma@example.com');
-            setPassword('Passenger@123');
-        }} className="px-3 py-2 text-caption font-semibold rounded-control border border-line-strong bg-white hover:bg-fog text-ink text-center transition-colors">
-                Passenger Demo
-              </button>
-              <button type="button" onClick={() => {
-            setEmail('admin@railconnect.in');
-            setPassword('Admin@123');
-        }} className="px-3 py-2 text-caption font-semibold rounded-control border border-royal/30 bg-blue-100 hover:bg-sky/20 text-royal text-center transition-colors">
-                Admin Demo
-              </button>
-            </div>
-          </div>
-        </form>
+        {/*
+          The one-click demo credential buttons are gone.
+
+          They filled the form with `rahul.sharma@example.com / Passenger@123`
+          and `admin@railconnect.in / Admin@123`. Neither account exists in the
+          `users` table — the seeded users are gmail.com addresses — so both
+          buttons could only ever produce a failed login, while shipping what
+          look like real passwords inside the built JavaScript. Sign up for a real
+          account instead.
+        */}
+      </form>
 
         <div className="mt-8 text-center text-sm text-ink-soft">
           Don't have an account?{' '}
@@ -87,6 +128,7 @@ export function Login() {
             Register here
           </Link>
         </div>
+        </>)}
       </div>
 
       {/* Right Column: Horizon Blueprint Brand Panel (brandkit §9.11) */}
@@ -103,15 +145,27 @@ export function Login() {
             Experience next-generation railway reservations with zero latency and live station updates.
           </p>
 
+          {/*
+            Counted from the database, not marketing copy.
+
+            This claimed "99.98%" reliability and "1,840 stations and 12,000+
+            daily trains nationwide". Neither is measurable here — there is no
+            uptime metric and no national network — so they are replaced by the
+            figures that can actually be counted.
+          */}
           <div className="rounded-card border border-white/10 bg-white/5 backdrop-blur-sm p-5 space-y-3">
             <div className="flex items-center justify-between">
               <span className="text-eyebrow uppercase tracking-[0.16em] text-sky-bright font-semibold">
-                Network Reliability
+                Network Coverage
               </span>
-              <span className="num font-bold text-white">99.98%</span>
+              <span className="num font-bold text-white">
+                {counts ? counts.trains : '—'} trains
+              </span>
             </div>
             <p className="text-caption text-on-dark-soft">
-              Real-time synchronization across 1,840 stations and 12,000+ daily trains nationwide.
+              {counts
+                ? `Across ${counts.stations} stations, ${counts.coaches} coaches and ${counts.berths} bookable berths.`
+                : 'Network figures are unavailable right now.'}
             </p>
           </div>
         </div>
