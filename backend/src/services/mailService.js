@@ -143,4 +143,38 @@ async function sendOtpEmail({ to, name, otp, ttlMinutes }) {
   return { delivered: true }
 }
 
-module.exports = { sendOtpEmail, isConfigured }
+/**
+ * Send a booking ticket (HTML body, optional PDF attachment).
+ *
+ * Resolves `{ delivered: false }` when SMTP is not configured outside
+ * production, so the booking flow still works on a machine with no mail set up.
+ * Rejects when the mail server refuses or is unreachable; the ticket service
+ * catches that, because a mail problem must never fail a paid booking.
+ */
+async function sendTicketEmail({ to, subject, text, html, attachments = [] }) {
+  if (!isConfigured()) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('SMTP is not configured')
+    }
+
+    console.warn(
+      '\n  [Yatrio] SMTP is not configured, so the ticket email was not sent.\n' +
+        `    Ticket for ${to}: ${subject}\n` +
+        '    Add SMTP_HOST / SMTP_PORT / SMTP_USER / SMTP_PASS to backend/.env to send real emails.\n',
+    )
+    return { delivered: false }
+  }
+
+  await getTransporter().sendMail({
+    from: process.env.MAIL_FROM || process.env.SMTP_USER,
+    to,
+    subject,
+    text,
+    html,
+    attachments,
+  })
+
+  return { delivered: true }
+}
+
+module.exports = { sendOtpEmail, sendTicketEmail, isConfigured }
