@@ -183,6 +183,45 @@ export function AuthProvider({ children, }) {
         }
         if (result.user) {
             const updatedUser = {
+                ...result.user,
+                id: String(result.user.id),
+                name: result.user.name || result.user.full_name,
+                email: result.user.email,
+                role: result.user.role || "passenger",
+                phone: result.user.phone || "",
+                createdAt: result.user.createdAt || result.user.created_at || "",
+                created_at: result.user.created_at || result.user.createdAt || "",
+            };
+            localStorage.setItem("railconnect_user", JSON.stringify(updatedUser));
+            setUser(updatedUser);
+        }
+        return result;
+    };
+    // UPDATE PROTECTED PROFILE
+    const updateProfile = async (profileData) => {
+        let response;
+        try {
+            response = await authFetch(PROFILE_URL, {
+                method: "PUT",
+                body: JSON.stringify(profileData),
+            });
+        }
+        catch {
+            throw new Error("Cannot connect to the server while updating your profile.");
+        }
+        let result;
+        try {
+            result = await response.json();
+        }
+        catch {
+            throw new Error(`The server returned an unreadable response (HTTP ${response.status}).`);
+        }
+        if (!response.ok) {
+            throw new Error(result.message || "Failed to update your profile.");
+        }
+        if (result.user) {
+            const updatedUser = {
+                ...result.user,
                 id: String(result.user.id),
                 name: result.user.name || result.user.full_name,
                 email: result.user.email,
@@ -212,6 +251,7 @@ export function AuthProvider({ children, }) {
         verifyEmail,
         resendOtp,
         getProfile,
+        updateProfile,
         logout,
         loading,
     };

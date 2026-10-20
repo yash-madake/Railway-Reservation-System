@@ -1,5 +1,6 @@
 const http = require('http');
 const jwt = require('jsonwebtoken');
+require('dotenv').config();
 const app = require('../src/server');
 const pool = require('../src/config/db');
 
@@ -15,7 +16,10 @@ async function request(path, options = {}) {
     const url = new URL(`${BASE_URL}${path}`);
     const reqOptions = {
       method: options.method || 'GET',
-      headers: options.headers || {},
+      headers: {
+        'Content-Type': 'application/json',
+        ...(options.headers || {}),
+      },
     };
 
     const req = http.request(url, reqOptions, (res) => {
@@ -91,18 +95,23 @@ async function runProfileTests() {
   }
 
   try {
-    // 1. Unauthenticated request to /users/profile should fail with 401
+    // 1. Unauthenticated request to /users/profile, /profile, and PUT /profile should fail with 401
     {
       const res = await request('/users/profile');
       assert(res.status === 401, 'Unauthenticated GET /users/profile returns 401');
+
+      const resDirect = await request('/profile');
+      assert(resDirect.status === 401, 'Unauthenticated GET /profile returns 401');
+
+      const resPut = await request('/profile', { method: 'PUT', body: { name: 'Unauthorized' } });
+      assert(resPut.status === 401, 'Unauthenticated PUT /profile returns 401');
     }
 
     // 2. A registered user reads their own profile back with a signed token.
-    //
-    //    The user is created here rather than looked up by a fixed email. This
-    //    case used to search for one named person's row, so it passed only on
-    //    the database that person had registered on and failed everywhere else
-    //    -- including the ones seeded by `npm run db:seed`.
+    let user1Token;
+    let user1Id;
+    let user1Email;
+    let user1Phone;
     {
       const { res: registration, email, phone } = await registerUser('Aarav Sharma');
 
@@ -112,8 +121,13 @@ async function runProfileTests() {
         'register returns the new user id (the insert id, not undefined)'
       );
 
+      user1Id = registration.body?.data?.id;
+      user1Email = email;
+      user1Phone = phone;
+      user1Token = tokenFor(user1Id, email);
+
       const res = await request('/users/profile', {
-        headers: { Authorization: `Bearer ${tokenFor(registration.body?.data?.id, email)}` },
+        headers: { Authorization: `Bearer ${user1Token}` },
       });
 
       assert(res.status === 200, 'Authenticated request returns 200');
@@ -140,6 +154,83 @@ async function runProfileTests() {
       assert(res.body.user.phone === phone, 'Dynamic phone returns the second user');
     }
 
+    // 4. Test authenticated PUT /profile to update profile fields (including extensions)
+    {
+      const updatedPhone = String(Number(user1Phone) + 1).slice(0, 10);
+      const emergencyPhone = '9890111111';
+
+      const putRes = await request('/profile', {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${user1Token}` },
+        body: {
+          name: 'Aarav K. Sharma',
+          phone: updatedPhone,
+          gender: 'Male',
+          date_of_birth: '1990-05-15',
+          emergency_contact_name: 'Pooja Sharma',
+          emergency_contact_phone: emergencyPhone,
+          preferred_class: '3A',
+          berth_preference: 'Lower',
+          food_preference: 'Non-vegetarian',
+          address: '42 MG Road',
+          city: 'Pune',
+          state: 'Maharashtra',
+          pincode: '411001',
+          id_type: 'Aadhaar Card',
+          id_number: '123456789012',
+        },
+      });
+
+      assert(putRes.status === 200, 'PUT /profile returns 200 on valid update');
+      assert(putRes.body.success === true, 'PUT /profile response has success: true');
+      assert(putRes.body.user.name === 'Aarav K. Sharma', 'Updated name in response is Aarav K. Sharma');
+      assert(putRes.body.user.phone === updatedPhone, 'Updated phone in response matches update');
+      assert(putRes.body.user.emergency_contact_name === 'Pooja Sharma', 'Updated emergency contact name matches');
+      assert(putRes.body.user.emergency_contact_phone === emergencyPhone, 'Updated emergency contact phone matches');
+      assert(putRes.body.user.preferred_class === '3A', 'Updated preferred class is 3A');
+      assert(putRes.body.user.berth_preference === 'Lower', 'Updated berth preference is Lower');
+      assert(putRes.body.user.food_preference === 'Non-vegetarian', 'Updated food preference is Non-vegetarian');
+      assert(putRes.body.user.pincode === '411001', 'Updated pincode is 411001');
+
+      // 5. Test persistence on subsequent GET /profile
+      const getAgainRes = await request('/profile', {
+        headers: { Authorization: `Bearer ${user1Token}` },
+      });
+
+      assert(getAgainRes.status === 200, 'GET /profile after update returns 200');
+      assert(getAgainRes.body.user.name === 'Aarav K. Sharma', 'Persisted name matches update');
+      assert(getAgainRes.body.user.phone === updatedPhone, 'Persisted phone matches update');
+      assert(getAgainRes.body.user.emergency_contact_name === 'Pooja Sharma', 'Persisted emergency contact matches');
+      assert(getAgainRes.body.user.emergency_contact_phone === emergencyPhone, 'Persisted emergency phone matches');
+      assert(getAgainRes.body.user.preferred_class === '3A', 'Persisted preferred class matches');
+      assert(getAgainRes.body.user.berth_preference === 'Lower', 'Persisted berth preference matches update');
+      assert(getAgainRes.body.user.food_preference === 'Non-vegetarian', 'Persisted food preference matches update');
+    }
+
+    // 6. Test PUT /profile validation rejections
+    {
+      const invalidNameRes = await request('/profile', {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${user1Token}` },
+        body: { name: 'A' },
+      });
+      assert(invalidNameRes.status === 400, 'PUT /profile returns 400 for name shorter than 2 characters');
+
+      const invalidEmergencyPhoneRes = await request('/profile', {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${user1Token}` },
+        body: { emergency_contact_phone: '123' },
+      });
+      assert(invalidEmergencyPhoneRes.status === 400, 'PUT /profile returns 400 for invalid emergency phone');
+
+      const invalidPinRes = await request('/profile', {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${user1Token}` },
+        body: { pincode: '123' },
+      });
+      assert(invalidPinRes.status === 400, 'PUT /profile returns 400 for invalid PIN code');
+    }
+
     console.log('\n====================================================');
     console.log(`Profile Test Results: ${passed} PASSED, ${failed} FAILED`);
     console.log('====================================================\n');
@@ -154,7 +245,7 @@ async function runProfileTests() {
       console.log(`  Cleaned up ${createdEmails.length} temporary user(s)\n`);
     }
 
-    server.close();
+    if (server) server.close();
     // The Sequelize pool and Redis's reconnect timer both hold the event loop
     // open after the last assertion, so a green run would hang here forever
     // instead of exiting.
@@ -168,6 +259,7 @@ async function runProfileTests() {
   if (failed > 0) {
     process.exit(1);
   }
+  process.exit(0);
 }
 
 runProfileTests().catch((err) => {
