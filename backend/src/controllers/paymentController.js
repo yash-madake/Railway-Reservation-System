@@ -21,6 +21,7 @@ const store = require('../services/payment/paymentStore')
 const razorpay = require('../services/payment/razorpayService')
 const bookingStore = require('../services/booking/bookingService')
 const audit = require('../services/auditService')
+const ticketService = require('../services/ticketService')
 const { confirmHolds } = require('../services/seat/holdService')
 const { fareForBooking, assertNoClientAmount } = require('../services/payment/fareService')
 const { verifyPaymentSignature } = require('../utils/signature')
@@ -235,6 +236,11 @@ async function verifyPayment(req, res) {
    * No transaction is held open across the Razorpay call above; that finished
    * before this point on purpose.
    */
+  // Set only when THIS call turns a HELD booking into a ticket, so the e-ticket
+  // email goes out exactly once. A repeat callback returns early above, and a
+  // booking that was already CONFIRMED never sets it.
+  let ticketIssued = false
+
   if (status === 'captured') {
     /**
      * A row in `bookings` was only ever written after its berths were claimed,
@@ -278,9 +284,10 @@ async function verifyPayment(req, res) {
       }
 
       // Money captured, berths confirmed — the booking is a ticket now.
-      await bookingStore
+      const confirmedBooking = await bookingStore
         .transition(record.bookingRef, 'CONFIRMED', { reason: 'payment_captured', changedBy: 'system' })
-        .catch(() => {})
+        .catch(() => null)
+      ticketIssued = isHeld && Boolean(confirmedBooking)
 
       await audit.record({
         action: audit.ACTIONS.BOOKING_CONFIRMED,
@@ -300,6 +307,19 @@ async function verifyPayment(req, res) {
     failureCode: payment.errorCode,
     failureReason: payment.errorReason,
   }, { event: status === 'failed' ? 'PAYMENT_FAILED' : 'PAYMENT_VERIFIED' })
+
+  // Email the e-ticket. Deliberately not awaited: the traveller has paid and the
+  // response should not wait on a mail server. It never throws, and a failure
+  // is logged by the ticket service rather than surfaced here.
+  if (ticketIssued) {
+    ticketService
+      .sendTicketForBooking(record.bookingRef, {
+        orderId,
+        paymentId: razorpayPaymentId,
+        method: updated.method,
+      })
+      .catch(() => {})
+  }
 
   return res.json(serialise(updated))
 }
