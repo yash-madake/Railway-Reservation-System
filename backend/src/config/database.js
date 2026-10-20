@@ -103,7 +103,37 @@ const connection = {
 const sequelize = new Sequelize({
   ...options,
   logging: env.db.logging ? (sql) => console.log(`[sql] ${sql}`) : false,
-  pool: { max: env.db.poolMax, idle: 10_000, acquire: 30_000 },
+  pool: {
+    max: env.db.poolMax,
+    idle: 10_000,
+    acquire: 30_000,
+
+    /**
+     * How long a statement may wait for a row lock before giving up.
+     *
+     * InnoDB's default is 50 seconds, and that default is wrong here. Every
+     * berth claim and every release is a conditional `UPDATE seat_inventory`,
+     * so during a tatkal opening a few hundred sessions queue on the same rows
+     * for the same handful of berths. At 50 seconds each, a pool of ten
+     * connections is fully consumed inside two seconds of the window opening:
+     * every new request waits on the pool's 30-second acquire timeout instead of
+     * on a berth, the failure surfaces as a generic request timeout rather than
+     * as "sold out", and the server stops answering at all.
+     *
+     * Failing fast is the point. A traveller who loses the race wants a 409
+     * saying the berth went, and to try another -- quickly, while there are
+     * still berths. A traveller stuck behind a 50-second lock wait wants nothing
+     * of the kind.
+     *
+     * `NOWAIT` is not used deliberately: it turns a contended row into an
+     * immediate error, which under a thundering herd would reject requests that
+     * would have succeeded a moment later. A short bounded wait rides out the
+     * queue; it just refuses to sit in it for a minute.
+     */
+    afterCreate: async (connection) => {
+      await connection.query(`SET SESSION innodb_lock_wait_timeout = ${env.db.lockWaitSeconds}`)
+    },
+  },
   define: { underscored: true, freezeTableName: true },
   /**
    * IST. A JS Date is formatted into a literal 'YYYY-MM-DD HH:mm:ss.SSS'

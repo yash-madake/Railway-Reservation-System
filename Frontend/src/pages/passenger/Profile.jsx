@@ -34,11 +34,38 @@ export function Profile() {
     }, []);
     const currentUser = profileData || authUser;
     const displayName = currentUser?.name || currentUser?.full_name || 'Passenger';
-    const displayEmail = currentUser?.email || 'user@yatrio.com';
+
+    /**
+     * Shown as "not recorded" rather than filled in.
+     *
+     * These used to fall back to `user@yatrio.com` and `+91 98765 43210`. Both
+     * columns are NOT NULL in `users` and are returned by `GET /users/profile`,
+     * so those branches only fire when the fetch failed — at which point showing
+     * a plausible-looking address and phone number is exactly the wrong answer.
+     */
+    const displayEmail = currentUser?.email || 'Not recorded';
     const rawPhone = currentUser?.phone || '';
     const displayPhone = rawPhone
         ? (rawPhone.startsWith('+91') ? rawPhone : `+91 ${rawPhone}`)
-        : '+91 98765 43210';
+        : 'Not recorded';
+
+    /**
+     * The account's real creation date.
+     *
+     * Was a literal "Member since Oct 2026" on every profile, including accounts
+     * created years apart. `AuthContext` already normalises this into
+     * `user.createdAt` from the profile response, so the data was in hand and
+     * being ignored.
+     */
+    const memberSince = (() => {
+        const raw = currentUser?.createdAt ?? currentUser?.created_at ?? profileData?.createdAt;
+        if (!raw) return null;
+        const d = new Date(raw);
+        return Number.isNaN(d.getTime())
+            ? null
+            : d.toLocaleDateString('en-IN', { month: 'short', year: 'numeric' });
+    })();
+
     const avatarInitial = displayName.trim().charAt(0).toUpperCase() || 'P';
     const handleSignOut = () => {
         logout();
@@ -68,15 +95,19 @@ export function Profile() {
               <div className="space-y-1">
                 <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2">
                   <h2 className="text-h3 font-bold text-paper">{displayName}</h2>
+                  {/*
+                    Was an unconditional "Verified Passenger". There is no
+                    `verified` column in `users`, so the badge asserted a state
+                    the system does not track. The role is real, so that is shown.
+                  */}
                   <Badge variant="outline" className="border-white/30 text-paper font-semibold bg-white/10">
-                    Verified Passenger
+                    {currentUser?.role ? String(currentUser.role) : 'Passenger'}
                   </Badge>
                 </div>
                 <p className="text-caption text-paper/80 font-medium">{displayEmail}</p>
                 <div className="flex items-center justify-center sm:justify-start gap-4 text-xs text-paper/70 pt-1">
-                  <span>{displayPhone}</span>
-                  <span>•</span>
-                  <span>Member since Oct 2026</span>
+                  {rawPhone && <><span>{displayPhone}</span><span>•</span></>}
+                  {memberSince && <span>Member since {memberSince}</span>}
                 </div>
               </div>
             </div>
@@ -116,22 +147,29 @@ export function Profile() {
 
               <div className="space-y-4">
                 <h3 className="text-h4 font-bold text-ink border-b border-line pb-2">
-                  Verification & Security
+                  Account
                 </h3>
+                {/*
+                  Both tiles that used to be here asserted states nothing records:
+                  "Mobile Number Verified / Authorized for IRCTC OTP verification"
+                  and "Account Security Status" with green check and shield icons.
+                  There is no `verified` column and no IRCTC integration. The one
+                  true thing here is the account's status, so only that is shown.
+                */}
                 <div className="space-y-3 text-sm">
                   <div className="flex items-center gap-3 p-3 rounded-control bg-fog/30 border border-line">
-                    <CheckCircle2 className="size-5 text-emerald-600 shrink-0"/>
+                    {currentUser?.status === 'active'
+                      ? <CheckCircle2 className="size-5 text-emerald-600 shrink-0"/>
+                      : <Shield className="size-5 text-warning-strong shrink-0"/>}
                     <div>
-                      <span className="font-semibold text-ink block">Mobile Number Verified</span>
-                      <span className="text-caption text-ink-soft">Authorized for IRCTC OTP verification</span>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-3 p-3 rounded-control bg-fog/30 border border-line">
-                    <Shield className="size-5 text-royal shrink-0"/>
-                    <div>
-                      <span className="font-semibold text-ink block">Account Security Status</span>
-                      <span className="text-caption text-ink-soft">Session secured with token-based auth</span>
+                      <span className="font-semibold text-ink block">
+                        Account status: {currentUser?.status ?? 'unknown'}
+                      </span>
+                      <span className="text-caption text-ink-soft">
+                        {currentUser?.status === 'active'
+                          ? 'This account can book and pay.'
+                          : 'This account cannot book until it is reactivated.'}
+                      </span>
                     </div>
                   </div>
                 </div>

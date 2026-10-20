@@ -20,20 +20,22 @@ class RailwayService {
     // reads "active" as a column name and rejects the query.
     let countQuery = `SELECT COUNT(*) as total FROM stations WHERE status = 'active'`;
     let dataQuery = `
-      SELECT id, station_code as code, station_name as name, city, state, timezone, status
-      FROM stations
-      WHERE status = 'active'
+      SELECT s.id, s.station_code as code, s.station_name as name, s.city,
+             st.state_name as state, s.timezone, s.status
+      FROM stations s
+      LEFT JOIN states st ON st.state_id = s.state_id
+      WHERE s.status = 'active'
     `;
     const params = [];
 
     if (search && search.trim()) {
       const searchTerm = `%${search.trim()}%`;
       countQuery += ' AND (station_code LIKE ? OR station_name LIKE ? OR city LIKE ?)';
-      dataQuery += ' AND (station_code LIKE ? OR station_name LIKE ? OR city LIKE ?)';
+      dataQuery += ' AND (s.station_code LIKE ? OR s.station_name LIKE ? OR s.city LIKE ?)';
       params.push(searchTerm, searchTerm, searchTerm);
     }
 
-    dataQuery += ' ORDER BY station_name ASC LIMIT ? OFFSET ?;';
+    dataQuery += ' ORDER BY s.station_name ASC LIMIT ? OFFSET ?;';
 
     const [[countResult]] = await pool.query(countQuery, params);
     const total = countResult ? countResult.total : 0;
@@ -235,9 +237,10 @@ class RailwayService {
     // 2. Fetch full route
     const [routes] = await pool.query(
       `SELECT r.stop_sequence, r.arrival_time, r.departure_time, r.distance_km, r.day_offset, r.halt_minutes, r.platform,
-              s.id as station_id, s.station_code, s.station_name, s.city, s.state
+              s.id as station_id, s.station_code, s.station_name, s.city, st.state_name as state
        FROM train_routes r
        INNER JOIN stations s ON s.id = r.station_id
+       LEFT JOIN states st ON st.state_id = s.state_id
        WHERE r.train_id = ?
        ORDER BY r.stop_sequence ASC;`,
       [train.id]
@@ -252,10 +255,15 @@ class RailwayService {
     );
 
     // 4. Fetch classes
+    // `class_name` comes from the `classes` lookup. It was on `train_classes`
+    // until migration 011, where it was dropped: class_code -> class_name is a
+    // transitive dependency, so the name belongs to the class, not to the
+    // train/class pairing.
     const [classes] = await pool.query(
-      `SELECT class_code, class_name, base_fare, total_seats, available_seats 
-       FROM train_classes 
-       WHERE train_id = ?;`,
+      `SELECT tc.class_code, cl.class_name, tc.base_fare, tc.total_seats, tc.available_seats
+         FROM train_classes tc
+         JOIN classes cl ON cl.class_code = tc.class_code
+        WHERE tc.train_id = ?;`,
       [train.id]
     );
 

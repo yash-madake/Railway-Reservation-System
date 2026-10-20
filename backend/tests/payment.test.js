@@ -5,7 +5,12 @@
  * success, failure, duplicate verification, tampered amount, expired order,
  * retry, and refund.
  *
- * Runs offline: the Razorpay gateway is stubbed, so no network or keys needed.
+ * The Razorpay gateway is stubbed, so no network or keys needed. A database is
+ * still required: fares are read from `train_classes.base_fare` (see
+ * fareLookup.js), because that is the single price list the search screens quote
+ * from. The expected amounts below are computed from that same lookup rather
+ * than written as literals — a literal here is how the old hardcoded rate table
+ * stayed wrong for so long without a test noticing.
  *
  *   node backend/tests/payment.test.js
  */
@@ -14,7 +19,32 @@ const assert = require('assert')
 
 // Stub the gateway before anything loads it.
 const razorpay = require('../src/services/payment/razorpayService')
-const BOOKING = 'YTR-12951-7QX2' // 3A, 1 passenger, ₹619 base+tax+fee
+const { lookupRate, TAX_RATE } = require('../src/services/payment/fareLookup')
+const { CONVENIENCE_FEE } = require('../src/services/payment/bookingService')
+const bs = require('../src/services/payment/bookingService')
+const fareService = require('../src/services/payment/fareService')
+const { seedBookings } = require('../src/scripts/seedBookings')
+
+const BOOKING = 'YTR-12951-7QX2' // 12951 in 3A, 1 passenger
+
+/**
+ * What this booking must cost, derived the same way the server derives it.
+ * 9% tax and the ₹30 convenience fee are the only rules layered on the base.
+ */
+const expected = {
+  get base() {
+    return rate.baseFarePaise
+  },
+  get total() {
+    return rate.baseFarePaise + rate.taxesPaise + CONVENIENCE_FEE
+  },
+  get withCoupon() {
+    // 10% off the base fare.
+    return rate.baseFarePaise + rate.taxesPaise + CONVENIENCE_FEE - Math.round((rate.baseFarePaise * 10) / 100)
+  },
+}
+let rate = null
+
 const SECRET = process.env.RAZORPAY_KEY_SECRET
 
 let seq = 0
@@ -107,6 +137,28 @@ async function expectHttpError(fn, code) {
 async function run() {
   console.log('\nTeam 5 — payment integration\n')
 
+  /**
+   * Put the demo references back in the database before anything else.
+   *
+   * These used to live in a `Map` inside the payment booking service, so
+   * `createOrder` resolved them without a database. That service has since been
+   * superseded by the durable one, which resolves against `bookings` — so
+   * without this the whole suite fails on "no booking found" for a reference the
+   * tests legitimately use. Re-running the seed makes the suite order-independent
+   * rather than depending on someone having seeded by hand.
+   */
+  await seedBookings()
+  console.log('  seeded YTR-12951-7QX2, YTR-12951-7QX3\n')
+
+  // Read the live price once. Every amount assertion below is derived from this,
+  // so editing a fare in the database cannot leave the tests asserting a figure
+  // the server no longer charges.
+  rate = await lookupRate({ trainNo: '12951', travelClass: '3A' })
+  console.log(
+    `  12951 / 3A from train_classes.base_fare: Rs ${rate.baseFare} ` +
+      `(+9% tax + Rs ${CONVENIENCE_FEE / 100} fee = Rs ${(expected.total / 100).toFixed(2)})\n`,
+  )
+
   // 1. SUCCESS -------------------------------------------------------------
   await test('success — valid signature captures the payment', async () => {
     stubGateway()
@@ -183,8 +235,9 @@ async function run() {
     const created = await call(ctrl.createOrder, { body: { bookingRef: BOOKING } })
     const { fare, amount } = created.payload
     assert.strictEqual(amount, fare.amount)
-    // 54000 base + 4860 taxes + 3000 fee for 3A
-    assert.strictEqual(amount, 61860)
+    // Priced from train_classes.base_fare: base + 9% tax + the ₹30 fee.
+    assert.strictEqual(amount, expected.total)
+    assert.strictEqual(fare.breakdown[0].perPassenger, expected.base)
     assert.notStrictEqual(amount, 100)
   })
 
@@ -258,7 +311,7 @@ async function run() {
 
     const refunded = await call(ctrl.refundPayment, { body: { orderId } })
     assert.strictEqual(refunded.payload.status, 'refunded')
-    assert.strictEqual(refunded.payload.refundedAmount, 61860)
+    assert.strictEqual(refunded.payload.refundedAmount, expected.total)
     assert.ok(refunded.payload.refundId)
 
     // Second refund is refused.
@@ -294,6 +347,63 @@ async function run() {
     assert.strictEqual(failed.payload.total, 0)
   })
 
+  await test('tax is levied once, on the total base fare', async () => {
+    stubGateway()
+    const created = await call(ctrl.createOrder, { body: { bookingRef: BOOKING } })
+    const { fare } = created.payload
+
+    const base = fare.breakdown.find((l) => l.key === 'base')
+    const tax = fare.breakdown.find((l) => l.key === 'taxes')
+
+    assert.strictEqual(base.amount, base.perPassenger * fare.passengers)
+    // Derived independently here: the tax must be one rounding of the whole
+    // fare, not a per-passenger rounding multiplied out. Those differ whenever
+    // the per-passenger rounding goes the wrong way.
+    assert.strictEqual(tax.amount, Math.round(base.amount * TAX_RATE))
+    assert.ok(
+      !/×/.test(tax.label),
+      'the line must not claim to be per-passenger when it is not',
+    )
+  })
+
+  await test('a fare that rounds badly still pays tax on the total, once', async () => {
+    // Rs 12.53 is the smallest case where the two formulas disagree:
+    //   round(1253 * 0.18) * 2 = 452   (per-passenger, then multiplied)
+    //   round(2506 * 0.18)       = 451   (once, on the total)
+    const { sequelize } = require('../src/config/database')
+    const ORIGINAL = '2065.00'
+
+    try {
+      await sequelize.query(
+        `UPDATE train_classes tc JOIN trains t ON t.id = tc.train_id
+            SET tc.base_fare = 12.53
+          WHERE t.train_number = '12951' AND tc.class_code = '3A'`,
+      )
+
+      const booking = bs.buildBooking({
+        train: { number: '12951', class: '3A' },
+        route: { from: 'NDLS', to: 'BPL' },
+        passengers: [{ name: 'A', age: 30 }, { name: 'B', age: 30 }],
+      })
+      const fare = await fareService.calculateFare(booking, {})
+
+      const base = fare.breakdown.find((l) => l.key === 'base')
+      const tax = fare.breakdown.find((l) => l.key === 'taxes')
+
+      assert.strictEqual(base.amount, 2506, 'Rs 12.53 x 2 = 2506 paise')
+      assert.strictEqual(tax.amount, 451, 'tax is rounded once, on the total')
+      assert.notStrictEqual(tax.amount, 452, 'not the per-passenger figure multiplied out')
+      assert.strictEqual(fare.amount, base.amount + tax.amount + CONVENIENCE_FEE)
+    } finally {
+      await sequelize.query(
+        `UPDATE train_classes tc JOIN trains t ON t.id = tc.train_id
+            SET tc.base_fare = :fare
+          WHERE t.train_number = '12951' AND tc.class_code = '3A'`,
+        { replacements: { fare: ORIGINAL } },
+      )
+    }
+  })
+
   await test('unknown booking reference is refused', async () => {
     await expectHttpError(() => call(ctrl.createOrder, { body: { bookingRef: 'NOPE' } }), 'NOT_FOUND')
   })
@@ -301,8 +411,8 @@ async function run() {
   await test('coupon is applied server-side and a bad one is refused', async () => {
     stubGateway()
     const withCoupon = await call(ctrl.createOrder, { body: { bookingRef: BOOKING, extras: { coupon: 'YATRIO10' } } })
-    // 10% off the 54000 base = 5400
-    assert.strictEqual(withCoupon.payload.amount, 61860 - 5400)
+    // 10% off the base, from the database fare rather than a literal.
+    assert.strictEqual(withCoupon.payload.amount, expected.withCoupon)
 
     store.reset()
     await expectHttpError(

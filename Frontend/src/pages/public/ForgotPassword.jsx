@@ -1,53 +1,48 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { Link } from 'react-router-dom';
 import { Logo } from '@/components/layout/Logo';
-import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import { Alert } from '@/components/ui/Alert';
+
+/**
+ * Password reset — not implemented, and it now says so.
+ *
+ * This form ran an 800 ms `setTimeout` and then displayed "a password reset link
+ * has been dispatched", for any address, without touching the network. There is
+ * no reset endpoint to call: `authRoutes` exposes only `POST /auth/register` and
+ * `POST /auth/login`, and no controller anywhere handles a reset token.
+ *
+ * A confirmation that no email was ever sent is worse than an absent feature,
+ * because someone will wait for a message that is not coming. So the form is
+ * gone and the gap is stated plainly.
+ */
 export function ForgotPassword() {
-    const [email, setEmail] = useState('');
-    const [isSubmitted, setIsSubmitted] = useState(false);
-    const [isLoading, setIsLoading] = useState(false);
-    const handleSubmit = (e) => {
-        e.preventDefault();
-        setIsLoading(true);
-        setTimeout(() => {
-            setIsLoading(false);
-            setIsSubmitted(true);
-        }, 800);
-    };
-    return (<div className="min-h-[calc(100vh-16rem)] flex items-center justify-center p-4">
-      <div className="w-full max-w-form rounded-card border border-line-mid bg-white p-8 shadow-card">
-        <div className="text-center mb-6">
-          <Logo size="md" className="mx-auto mb-4"/>
-          <h1 className="text-h3 font-bold tracking-tight text-ink">Reset Password</h1>
-          <p className="mt-1 text-sm text-ink-soft">
-            Enter your email to receive password recovery instructions.
-          </p>
+    return (
+        <div className="min-h-[calc(100vh-16rem)] flex items-center justify-center p-4">
+            <div className="w-full max-w-form rounded-card border border-line-mid bg-white p-8 shadow-card">
+                <div className="text-center mb-6">
+                    <Logo size="md" className="mx-auto mb-4"/>
+                    <h1 className="text-h3 font-bold tracking-tight text-ink">Reset Password</h1>
+                </div>
+
+                <Alert variant="warning" title="Not available yet">
+                    Password reset is not implemented. There is no reset endpoint on the server, so
+                    no recovery email can be sent from here.
+                </Alert>
+
+                <div className="mt-4 text-sm text-ink-soft">
+                    <p>To get back in, register a new account, or sign in with an existing one.</p>
+                </div>
+
+                <div className="flex flex-col sm:flex-row gap-3 pt-6">
+                    <Link to="/register" className="flex-1">
+                        <Button variant="outline" className="w-full">Register</Button>
+                    </Link>
+                    <Link to="/login" className="flex-1">
+                        <Button className="w-full">Return to sign in</Button>
+                    </Link>
+                </div>
+            </div>
         </div>
-
-        {isSubmitted ? (<div className="space-y-4">
-            <Alert variant="success" title="Instructions sent">
-              If an account exists for {email}, a password reset link has been dispatched.
-            </Alert>
-            <div className="text-center pt-2">
-              <Link to="/login" className="text-sm font-semibold text-royal hover:underline">
-                Return to sign in
-              </Link>
-            </div>
-          </div>) : (<form onSubmit={handleSubmit} className="space-y-4">
-            <Input label="Email address" type="email" placeholder="passenger@example.com" value={email} onChange={(e) => setEmail(e.target.value)} required/>
-
-            <Button type="submit" size="lg" className="w-full mt-2" isLoading={isLoading}>
-              Send Reset Link
-            </Button>
-
-            <div className="text-center pt-4">
-              <Link to="/login" className="text-sm font-medium text-ink-soft hover:text-ink">
-                Cancel and return to sign in
-              </Link>
-            </div>
-          </form>)}
-      </div>
-    </div>);
+    );
 }

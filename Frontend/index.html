@@ -13,6 +13,9 @@
   </head>
   <body class="bg-paper text-body min-h-screen">
     <div id="root"></div>
+    <!-- Razorpay Standard Checkout. `defer` keeps it off the critical path;
+         lib/razorpay.js also loads it on demand and reuses this tag if present. -->
+    <script src="https://checkout.razorpay.com/v1/checkout.js" defer></script>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>

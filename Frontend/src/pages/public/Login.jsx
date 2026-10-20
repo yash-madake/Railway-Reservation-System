@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Logo } from '@/components/layout/Logo';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import { Alert } from '@/components/ui/Alert';
 import { useAuth } from '@/context/AuthContext';
+import { API_BASE_URL } from '@/api/client';
 export function Login() {
     const [showPassword, setShowPassword] = useState(false);
     const [error, setError] = useState('');
@@ -13,6 +14,25 @@ export function Login() {
     const navigate = useNavigate();
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
+
+    // Real network counts for the side panel, so it stops claiming 99.98%
+    // uptime across 1,840 stations.
+    const [counts, setCounts] = useState(null);
+
+    useEffect(() => {
+        let isMounted = true;
+        fetch(`${API_BASE_URL}/trains/stats`)
+            .then((res) => (res.ok ? res.json() : Promise.reject(new Error(`stats ${res.status}`))))
+            .then((body) => {
+                if (isMounted) setCounts(body?.data?.counts ?? null);
+            })
+            .catch(() => {
+                /* the panel falls back to an honest "unavailable" */
+            });
+        return () => {
+            isMounted = false;
+        };
+    }, []);
     const handleSubmit = async (e) => {
         e.preventDefault();
         setError('');
@@ -59,27 +79,17 @@ export function Login() {
             Sign In
           </Button>
 
-          {/* Quick Demo Access Credentials */}
-          <div className="pt-4 border-t border-line mt-6">
-            <p className="text-eyebrow font-semibold uppercase tracking-[0.16em] text-ink-soft text-center mb-3">
-              One-Click Demo Credentials
-            </p>
-            <div className="grid grid-cols-2 gap-2">
-              <button type="button" onClick={() => {
-            setEmail('rahul.sharma@example.com');
-            setPassword('Passenger@123');
-        }} className="px-3 py-2 text-caption font-semibold rounded-control border border-line-strong bg-white hover:bg-fog text-ink text-center transition-colors">
-                Passenger Demo
-              </button>
-              <button type="button" onClick={() => {
-            setEmail('admin@railconnect.in');
-            setPassword('Admin@123');
-        }} className="px-3 py-2 text-caption font-semibold rounded-control border border-royal/30 bg-blue-100 hover:bg-sky/20 text-royal text-center transition-colors">
-                Admin Demo
-              </button>
-            </div>
-          </div>
-        </form>
+        {/*
+          The one-click demo credential buttons are gone.
+
+          They filled the form with `rahul.sharma@example.com / Passenger@123`
+          and `admin@railconnect.in / Admin@123`. Neither account exists in the
+          `users` table — the seeded users are gmail.com addresses — so both
+          buttons could only ever produce a failed login, while shipping what
+          look like real passwords inside the built JavaScript. Sign up for a real
+          account instead.
+        */}
+      </form>
 
         <div className="mt-8 text-center text-sm text-ink-soft">
           Don't have an account?{' '}
@@ -103,15 +113,27 @@ export function Login() {
             Experience next-generation railway reservations with zero latency and live station updates.
           </p>
 
+          {/*
+            Counted from the database, not marketing copy.
+
+            This claimed "99.98%" reliability and "1,840 stations and 12,000+
+            daily trains nationwide". Neither is measurable here — there is no
+            uptime metric and no national network — so they are replaced by the
+            figures that can actually be counted.
+          */}
           <div className="rounded-card border border-white/10 bg-white/5 backdrop-blur-sm p-5 space-y-3">
             <div className="flex items-center justify-between">
               <span className="text-eyebrow uppercase tracking-[0.16em] text-sky-bright font-semibold">
-                Network Reliability
+                Network Coverage
               </span>
-              <span className="num font-bold text-white">99.98%</span>
+              <span className="num font-bold text-white">
+                {counts ? counts.trains : '—'} trains
+              </span>
             </div>
             <p className="text-caption text-on-dark-soft">
-              Real-time synchronization across 1,840 stations and 12,000+ daily trains nationwide.
+              {counts
+                ? `Across ${counts.stations} stations, ${counts.coaches} coaches and ${counts.berths} bookable berths.`
+                : 'Network figures are unavailable right now.'}
             </p>
           </div>
         </div>

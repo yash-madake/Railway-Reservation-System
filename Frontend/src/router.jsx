@@ -17,7 +17,7 @@ import { TrainDetails } from '@/pages/passenger/TrainDetails';
 import { PassengerDetails } from '@/pages/passenger/PassengerDetails';
 import { SeatSelection } from '@/pages/passenger/SeatSelection';
 import { BookingReview } from '@/pages/passenger/BookingReview';
-import { Payment } from '@/pages/passenger/Payment';
+import { PaymentProcessing } from '@/pages/passenger/PaymentProcessing';
 import { BookingSuccess } from '@/pages/passenger/BookingSuccess';
 import { MyBookings } from '@/pages/passenger/MyBookings';
 import { BookingDetails } from '@/pages/passenger/BookingDetails';
@@ -106,12 +106,15 @@ export const router = createBrowserRouter([
                         element: <SeatSelection />,
                     },
                     {
+                        // Step 3 is the last step: BookingReview opens Razorpay
+                        // Checkout itself, so there is no separate payment page.
                         path: '/booking/review',
                         element: <BookingReview />,
                     },
                     {
-                        path: '/booking/payment',
-                        element: <Payment />,
+                        // Between "Razorpay says yes" and "the server agrees".
+                        path: '/booking/payment/processing',
+                        element: <PaymentProcessing />,
                     },
                     {
                         path: '/booking/success',

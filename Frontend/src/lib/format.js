@@ -5,6 +5,17 @@ export const fare = (amount) => {
         return '₹0';
     return `₹${num.toLocaleString('en-IN')}`;
 };
+/**
+ * Paise to a rupee string. Razorpay's API, and therefore every amount the
+ * payment endpoints return, is in paise — passing one of those to `fare()`
+ * would render a 100x-too-small price, so use this instead.
+ */
+export const paise = (amount) => {
+    const num = typeof amount === 'string' ? parseFloat(amount) : Number(amount);
+    if (!Number.isFinite(num))
+        return '₹0.00';
+    return `₹${(num / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+};
 export const time24 = (isoOrTime) => {
     if (!isoOrTime)
         return '--:--';
