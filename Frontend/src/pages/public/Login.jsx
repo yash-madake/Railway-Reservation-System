@@ -4,12 +4,16 @@ import { Logo } from '@/components/layout/Logo';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import { Alert } from '@/components/ui/Alert';
+import { EmailVerification } from '@/components/auth/EmailVerification';
 import { useAuth } from '@/context/AuthContext';
 import { API_BASE_URL } from '@/api/client';
 export function Login() {
     const [showPassword, setShowPassword] = useState(false);
     const [error, setError] = useState('');
+    const [notice, setNotice] = useState('');
     const [isLoading, setIsLoading] = useState(false);
+    // Set when the password was right but the email has never been confirmed.
+    const [pendingEmail, setPendingEmail] = useState(null);
     const { login } = useAuth();
     const navigate = useNavigate();
     const [email, setEmail] = useState('');
@@ -36,16 +40,34 @@ export function Login() {
     const handleSubmit = async (e) => {
         e.preventDefault();
         setError('');
+        setNotice('');
         setIsLoading(true);
         try {
             await login(email, password);
             navigate('/search');
         }
         catch (err) {
-            setError(err.message || 'Invalid credentials');
+            if (err.code === 'EMAIL_NOT_VERIFIED') {
+                // Right password, unconfirmed email: go to the code screen.
+                setPendingEmail(err.email || email.trim());
+            }
+            else {
+                setError(err.message || 'Invalid credentials');
+            }
         }
         finally {
             setIsLoading(false);
+        }
+    };
+    // The code was accepted, so the user is already signed in.
+    const handleVerified = (result) => {
+        if (result?.alreadyVerified) {
+            setPendingEmail(null);
+            setPassword('');
+            setNotice('Your email is already verified. Please sign in.');
+        }
+        else {
+            navigate('/search');
         }
     };
     return (<div className="min-h-[calc(100vh-4rem)] grid lg:grid-cols-2">
@@ -53,11 +75,20 @@ export function Login() {
       <div className="flex flex-col justify-center px-6 py-12 sm:px-12 lg:px-16 max-w-form mx-auto w-full">
         <div className="mb-8">
           <Logo size="md" className="mb-6"/>
-          <h1 className="text-h2 font-bold tracking-tight text-ink">Sign In</h1>
+          <h1 className="text-h2 font-bold tracking-tight text-ink">
+            {pendingEmail ? 'Verify your email' : 'Sign In'}
+          </h1>
           <p className="mt-2 text-body text-ink-soft">
-            Access your tickets, manage trips, and track live bookings.
+            {pendingEmail
+            ? `Your email address hasn't been confirmed yet. Enter the 6-digit code sent to ${pendingEmail}.`
+            : 'Access your tickets, manage trips, and track live bookings.'}
           </p>
         </div>
+
+        {pendingEmail ? (<EmailVerification email={pendingEmail} sendOnMount onVerified={handleVerified} onBack={() => setPendingEmail(null)} backLabel="Back to sign in"/>) : (<>
+        {notice && (<Alert variant="success" title="Email verified" className="mb-6">
+            {notice}
+          </Alert>)}
 
         {error && (<Alert variant="error" title="Authentication failed" className="mb-6">
             {error}
@@ -97,6 +128,7 @@ export function Login() {
             Register here
           </Link>
         </div>
+        </>)}
       </div>
 
       {/* Right Column: Horizon Blueprint Brand Panel (brandkit §9.11) */}
