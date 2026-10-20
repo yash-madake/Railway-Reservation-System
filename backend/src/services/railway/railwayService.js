@@ -323,6 +323,71 @@ class RailwayService {
     await cache.set(cacheKey, result, 300); // 5 minutes cache
     return result;
   }
+
+  /**
+   * Read the train-status projection. The view joins the canonical train,
+   * route and station tables, so this endpoint cannot drift from the timetable
+   * used elsewhere in the reservation flow.
+   */
+  async getTrainStatus(trainNo) {
+    const cleanTrainNo = String(trainNo).trim();
+    const cacheKey = `train:status:${cleanTrainNo}`;
+    const cached = await cache.get(cacheKey);
+    if (cached) return cached;
+
+    const [rows] = await pool.query(
+      `SELECT train_id, train_number, train_name, train_type, train_status, pantry_available,
+              stop_sequence, arrival_time, departure_time, distance_km, day_offset,
+              halt_minutes, platform, station_id, station_code, station_name, city, state
+         FROM v_train_status_timetable
+        WHERE train_number = ? OR train_id = ?
+        ORDER BY stop_sequence ASC;`,
+      [cleanTrainNo, cleanTrainNo],
+    );
+
+    if (!rows.length) return null;
+
+    const first = rows[0];
+    const last = rows[rows.length - 1];
+    const result = {
+      id: String(first.train_id),
+      trainNumber: first.train_number,
+      trainName: first.train_name,
+      trainType: first.train_type,
+      status: first.train_status,
+      pantryAvailable: Boolean(first.pantry_available),
+      source: {
+        code: first.station_code,
+        name: first.station_name,
+        departureTime: first.departure_time ? String(first.departure_time).slice(0, 5) : null,
+      },
+      destination: {
+        code: last.station_code,
+        name: last.station_name,
+        arrivalTime: last.arrival_time ? String(last.arrival_time).slice(0, 5) : null,
+      },
+      totalDistanceKm: last.distance_km === null ? null : Number(last.distance_km),
+      stops: rows.map((row) => ({
+        sequence: row.stop_sequence,
+        station: {
+          id: String(row.station_id),
+          code: row.station_code,
+          name: row.station_name,
+          city: row.city,
+          state: row.state,
+        },
+        arrivalTime: row.arrival_time ? String(row.arrival_time).slice(0, 5) : null,
+        departureTime: row.departure_time ? String(row.departure_time).slice(0, 5) : null,
+        distanceKm: row.distance_km === null ? null : Number(row.distance_km),
+        day: row.day_offset,
+        haltMinutes: row.halt_minutes,
+        platform: row.platform,
+      })),
+    };
+
+    await cache.set(cacheKey, result, 300);
+    return result;
+  }
 }
 
 module.exports = new RailwayService();

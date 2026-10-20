@@ -99,6 +99,7 @@ app.get('/', (req, res) => {
       'GET /stations',
       'GET /stations/search?q=:query',
       'GET /trains/search?q=:query',
+      'GET /trains/status/:trainNo',
       'GET /trains/between?from=:from&to=:to&date=:date',
       'GET /trains/:trainNo',
     ],
