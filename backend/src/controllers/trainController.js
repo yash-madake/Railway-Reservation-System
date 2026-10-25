@@ -135,6 +135,53 @@ async function getTrainDetails(req, res) {
 }
 
 /**
+ * GET /trains/status/:trainNo
+ * Return the timetable projection used by the Train Status page.
+ */
+async function getTrainStatus(req, res) {
+  try {
+    const { trainNo } = req.params;
+
+    if (!trainNo || !trainNo.trim()) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'TRAIN_NUMBER_REQUIRED',
+          message: 'Train number is required',
+        },
+      });
+    }
+
+    const train = await railwayService.getTrainStatus(trainNo);
+
+    if (!train) {
+      return res.status(404).json({
+        success: false,
+        error: {
+          code: 'TRAIN_NOT_FOUND',
+          message: `Train with number "${trainNo}" was not found`,
+        },
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: 'Train status timetable retrieved successfully',
+      data: train,
+    });
+  } catch (error) {
+    console.error(`Error fetching train status for ${req.params.trainNo}:`, error);
+    return res.status(500).json({
+      success: false,
+      error: {
+        code: 'INTERNAL_SERVER_ERROR',
+        message: 'An error occurred while fetching train status',
+      },
+    });
+  }
+}
+
+/**
  * Public network figures, counted from the database.
  *
  * The marketing page used to open with "12,480 trains running", "98.4% on-time",
@@ -202,5 +249,6 @@ module.exports = {
   searchTrainsBetween,
   searchTrains,
   getTrainDetails,
+  getTrainStatus,
   getNetworkStats,
 };

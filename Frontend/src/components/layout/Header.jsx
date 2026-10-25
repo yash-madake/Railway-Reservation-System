@@ -17,6 +17,7 @@ export function Header() {
     const navLinks = [
         { label: 'Book Trains', href: '/search' },
         { label: 'PNR Status', href: '/pnr' },
+        { label: 'Train Status', href: '/train-status' },
         { label: 'All Trains', href: '/trains' },
     ];
     return (<header className="sticky top-0 z-50 border-b border-white/10 bg-navy/95 backdrop-blur">

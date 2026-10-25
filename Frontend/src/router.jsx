@@ -22,6 +22,7 @@ import { BookingSuccess } from '@/pages/passenger/BookingSuccess';
 import { MyBookings } from '@/pages/passenger/MyBookings';
 import { BookingDetails } from '@/pages/passenger/BookingDetails';
 import { PnrStatus } from '@/pages/passenger/PnrStatus';
+import { TrainStatus } from '@/pages/passenger/TrainStatus';
 import { Profile } from '@/pages/passenger/Profile';
 // Admin Pages
 import AdminLogin from '@/pages/admin/AdminLogin';
@@ -92,6 +93,10 @@ export const router = createBrowserRouter([
             {
                 path: '/trains/:id',
                 element: <TrainDetails />,
+            },
+            {
+                path: '/train-status',
+                element: <TrainStatus />,
             },
             // Booking flow (protected)
             {
