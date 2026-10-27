@@ -6,17 +6,10 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
-    "test": "node tests/payment.test.js",
-    "test:db": "node tests/db.test.js",
-    "db:migrate": "node src/scripts/runMigrations.js && sequelize-cli db:migrate",
-    "db:migrate:raw": "node src/scripts/runMigrations.js",
-    "db:migrate:undo": "sequelize-cli db:migrate:undo",
-    "db:migrate:undo:all": "sequelize-cli db:migrate:undo:all",
-    "db:migrate:status": "sequelize-cli db:migrate:status",
-    "db:seed": "sequelize-cli db:seed:all && node src/scripts/seedAdmin.js && node src/scripts/seedRailwayData.js",
-    "db:seed:undo": "sequelize-cli db:seed:undo:all",
-    "db:reset": "npm run db:migrate && npm run db:seed",
-    "db:shell": "node scripts/db-shell.js"
+    "migrate": "node src/scripts/runMigrations.js",
+    "seed:team7": "node src/scripts/seedTeam7.js",
+    "test": "node --test tests/*.test.js",
+    "import:provided-data": "node src/scripts/importProvidedData.js"
   },
   "keywords": [],
   "author": "",
@@ -25,19 +18,12 @@
   "dependencies": {
     "bcryptjs": "^3.0.3",
     "cors": "^2.8.6",
-    "dotenv": "^18.0.6",
+    "dotenv": "^18.0.3",
     "express": "^5.2.1",
-    "express-rate-limit": "^8.7.1",
-    "ioredis": "^6.0.0",
     "jsonwebtoken": "^9.0.3",
-    "morgan": "^1.12.1",
-    "mysql2": "^3.24.4",
-    "razorpay": "^2.9.8",
-    "rate-limit-redis": "^6.0.1",
-    "sequelize": "^6.37.8"
+    "mysql2": "^3.24.4"
   },
   "devDependencies": {
-    "nodemon": "^3.1.14",
-    "sequelize-cli": "^6.6.5"
+    "nodemon": "^3.1.14"
   }
 }

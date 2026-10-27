@@ -12,17 +12,14 @@ class RailwayService {
     const offset = (pageNum - 1) * limitNum;
 
     const cacheKey = `stations:all:${pageNum}:${limitNum}:${search}`;
-    const cached = await cache.get(cacheKey);
+    const cached = cache.get(cacheKey);
     if (cached) return cached;
 
-    // Single-quoted literals, not "active". The hosted MySQL runs with
-    // ANSI_QUOTES, where double quotes delimit an identifier — the server
-    // reads "active" as a column name and rejects the query.
-    let countQuery = `SELECT COUNT(*) as total FROM stations WHERE status = 'active'`;
+    let countQuery = 'SELECT COUNT(*) as total FROM stations WHERE status = "active"';
     let dataQuery = `
       SELECT id, station_code as code, station_name as name, city, state, timezone, status
       FROM stations
-      WHERE status = 'active'
+      WHERE status = "active"
     `;
     const params = [];
 
@@ -50,7 +47,7 @@ class RailwayService {
       },
     };
 
-    await cache.set(cacheKey, result, 120); // 2 minutes cache
+    cache.set(cacheKey, result, 120); // 2 minutes cache
     return result;
   }
 
@@ -62,7 +59,7 @@ class RailwayService {
     const limitNum = Math.min(50, Math.max(1, parseInt(limit, 10) || 10));
 
     const cacheKey = `stations:search:${cleanQuery}:${limitNum}`;
-    const cached = await cache.get(cacheKey);
+    const cached = cache.get(cacheKey);
     if (cached) return cached;
 
     // Call stored procedure
@@ -81,7 +78,7 @@ class RailwayService {
       status: s.status,
     }));
 
-    await cache.set(cacheKey, stations, 180); // 3 minutes cache
+    cache.set(cacheKey, stations, 180); // 3 minutes cache
     return stations;
   }
 
@@ -93,7 +90,7 @@ class RailwayService {
     const normalizedTo = toCode.trim().toUpperCase();
 
     const cacheKey = `trains:between:${normalizedFrom}:${normalizedTo}:${journeyDate}`;
-    const cached = await cache.get(cacheKey);
+    const cached = cache.get(cacheKey);
     if (cached) return cached;
 
     // Call stored procedure search_trains_between_stations
@@ -163,7 +160,7 @@ class RailwayService {
       trains,
     };
 
-    await cache.set(cacheKey, responseData, 60); // 1 minute cache
+    cache.set(cacheKey, responseData, 60); // 1 minute cache
     return responseData;
   }
 
@@ -219,7 +216,7 @@ class RailwayService {
   async getTrainDetails(trainNo) {
     const cleanTrainNo = String(trainNo).trim();
     const cacheKey = `train:details:${cleanTrainNo}`;
-    const cached = await cache.get(cacheKey);
+    const cached = cache.get(cacheKey);
     if (cached) return cached;
 
     // 1. Fetch train basic info
@@ -312,7 +309,7 @@ class RailwayService {
       })),
     };
 
-    await cache.set(cacheKey, result, 300); // 5 minutes cache
+    cache.set(cacheKey, result, 300); // 5 minutes cache
     return result;
   }
 }

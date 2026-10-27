@@ -1,137 +1,168 @@
-import React, { useState, useEffect } from 'react';
-import { Download } from 'lucide-react';
+import React, { useState } from 'react';
+import { Download, TrendingUp, Ticket, Users, Map } from 'lucide-react';
+import { LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/Tabs';
-import { Skeleton } from '@/components/ui/Skeleton';
-import { Alert } from '@/components/ui/Alert';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/Table';
-import { adminService } from '@/services/adminService';
-import { ShieldAlert } from 'lucide-react';
-import { fare } from '@/lib/format';
-
-export default function Reports() {
-    const [activeTab, setActiveTab] = useState('booking-summary');
-    const [data, setData] = useState(null);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState(null);
-
-    const availableReports = [
-        { id: 'booking-summary', label: 'Booking Summary' },
-        { id: 'revenue', label: 'Revenue Estimates' },
-        { id: 'train-occupancy', label: 'Train Occupancy' },
-        { id: 'user-activity', label: 'User Activity' }
+import { Input } from '@/components/ui/Input';
+const COLORS = ['#2563eb', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
+const Reports = () => {
+    const [activeTab, setActiveTab] = useState('revenue');
+    // Mock data
+    const revenueData = [
+        { name: '01 Oct', value: 1800000 },
+        { name: '02 Oct', value: 2100000 },
+        { name: '03 Oct', value: 1950000 },
+        { name: '04 Oct', value: 2400000 },
+        { name: '05 Oct', value: 2800000 },
+        { name: '06 Oct', value: 2600000 },
+        { name: '07 Oct', value: 1845600 },
     ];
+    const bookingClassData = [
+        { name: '3A', value: 4500 },
+        { name: 'SL', value: 8500 },
+        { name: '2A', value: 2100 },
+        { name: '1A', value: 800 },
+        { name: 'CC', value: 1200 },
+    ];
+    const routeData = [
+        { name: 'NDLS - MMCT', bookings: 1250 },
+        { name: 'HWH - CSMT', bookings: 980 },
+        { name: 'SBC - MAS', bookings: 850 },
+        { name: 'PNBE - NDLS', bookings: 780 },
+        { name: 'ADI - BCT', bookings: 650 },
+    ];
+    return (<div className="p-6 max-w-7xl mx-auto space-y-6">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <h1 className="text-2xl font-bold text-foreground">Reports & Analytics</h1>
+        <div className="flex flex-wrap gap-2 items-center">
+          <div className="flex items-center gap-2 mr-4">
+            <Input type="date" className="w-[140px]" defaultValue="2026-10-01"/>
+            <span className="text-muted">to</span>
+            <Input type="date" className="w-[140px]" defaultValue="2026-10-07"/>
+          </div>
+          <Button variant="outline"><Download className="mr-2 h-4 w-4"/> Export CSV</Button>
+          <Button variant="outline"><Download className="mr-2 h-4 w-4"/> Export PDF</Button>
+        </div>
+      </div>
 
-    useEffect(() => {
-        const fetchReport = async () => {
-            try {
-                setLoading(true);
-                const response = await adminService.getReports({ type: activeTab });
-                setData(response.data);
-                setError(null);
-            } catch (err) {
-                setError(err.message || 'Failed to load report.');
-            } finally {
-                setLoading(false);
-            }
-        };
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
+        <TabsList className="grid w-full sm:w-[600px] grid-cols-4">
+          <TabsTrigger value="revenue"><TrendingUp className="mr-2 h-4 w-4"/> Revenue</TabsTrigger>
+          <TabsTrigger value="bookings"><Ticket className="mr-2 h-4 w-4"/> Bookings</TabsTrigger>
+          <TabsTrigger value="occupancy"><Users className="mr-2 h-4 w-4"/> Occupancy</TabsTrigger>
+          <TabsTrigger value="routes"><Map className="mr-2 h-4 w-4"/> Routes</TabsTrigger>
+        </TabsList>
 
-        fetchReport();
-    }, [activeTab]);
-
-    const handleExportCsv = () => {
-        if (!data || !data.length) return;
-        const headers = Object.keys(data[0]).join(',');
-        const rows = data.map(obj => Object.values(obj).join(',')).join('\n');
-        const csv = `${headers}\n${rows}`;
-        const blob = new Blob([csv], { type: 'text/csv' });
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `yatrio-report-${activeTab}-${new Date().toISOString().split('T')[0]}.csv`;
-        a.click();
-    };
-
-    return (
-        <div className="space-y-6">
-            <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
-                <div>
-                    <h1 className="text-h2 font-bold tracking-tight text-ink">Reports</h1>
-                    <p className="text-body text-ink-soft">Detailed administrative reports and data exports.</p>
-                </div>
-                <Button 
-                    variant="outline" 
-                    icon={<Download className="size-4" />} 
-                    onClick={handleExportCsv}
-                    disabled={loading || !data || data.length === 0}
-                >
-                    Export CSV
-                </Button>
+        <div className="mt-6">
+          <TabsContent value="revenue" className="space-y-6 mt-0">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <StatCard title="Total Revenue" value="₹1.55 Cr" subtext="Last 7 days"/>
+              <StatCard title="Average Daily" value="₹22.14 L" subtext="Last 7 days"/>
+              <StatCard title="Highest Day (05 Oct)" value="₹28.00 L" subtext="Saturday"/>
+              <StatCard title="Lowest Day (01 Oct)" value="₹18.00 L" subtext="Tuesday"/>
             </div>
 
-            <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-                <TabsList className="mb-6 grid grid-cols-2 md:grid-cols-4 lg:w-[600px]">
-                    {availableReports.map(report => (
-                        <TabsTrigger key={report.id} value={report.id}>
-                            {report.label}
-                        </TabsTrigger>
-                    ))}
-                </TabsList>
+            <Card>
+              <CardHeader>
+                <CardTitle>Daily Revenue Trend</CardTitle>
+              </CardHeader>
+              <CardContent className="h-96">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={revenueData} margin={{ top: 20, right: 30, bottom: 20, left: 20 }}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb"/>
+                    <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#6b7280' }}/>
+                    <YAxis axisLine={false} tickLine={false} tick={{ fill: '#6b7280' }} tickFormatter={(val) => `₹${val / 100000}L`}/>
+                    <Tooltip formatter={(value) => [`₹${Number(value).toLocaleString('en-IN')}`, 'Revenue']}/>
+                    <Line type="monotone" dataKey="value" stroke="#10b981" strokeWidth={3} dot={{ r: 4 }} activeDot={{ r: 6 }}/>
+                  </LineChart>
+                </ResponsiveContainer>
+              </CardContent>
+            </Card>
+          </TabsContent>
 
-                {availableReports.map(report => (
-                    <TabsContent key={report.id} value={report.id}>
-                        <Card>
-                            <CardHeader>
-                                <CardTitle>{report.label} Report</CardTitle>
-                            </CardHeader>
-                            <CardContent>
-                                {loading ? (
-                                    <div className="space-y-4">
-                                        {[1, 2, 3, 4, 5].map(i => <Skeleton key={i} className="h-12 w-full" />)}
-                                    </div>
-                                ) : error ? (
-                                    <Alert variant="error" icon={<ShieldAlert aria-hidden="true" />}>
-                                        {error}
-                                    </Alert>
-                                ) : !data || data.length === 0 ? (
-                                    <div className="py-12 text-center text-ink-soft">
-                                        No data available for this report.
-                                    </div>
-                                ) : (
-                                    <div className="overflow-x-auto">
-                                        <Table className="w-full text-left">
-                                            <TableHeader className="bg-surface-sunken">
-                                                <TableRow>
-                                                    {Object.keys(data[0]).map(key => (
-                                                        <TableHead key={key} className="capitalize px-4">{key.replace(/_/g, ' ')}</TableHead>
-                                                    ))}
-                                                </TableRow>
-                                            </TableHeader>
-                                            <TableBody className="divide-y divide-line">
-                                                {data.map((row, i) => (
-                                                    <TableRow key={i} className="hover:bg-surface-sunken/70">
-                                                        {Object.values(row).map((val, j) => (
-                                                            <TableCell key={j} className={`px-4 ${typeof val === 'number' ? 'num' : ''}`}>
-                                                                {keyMatch(Object.keys(row)[j], 'revenue') ? fare(val * 100) : val}
-                                                            </TableCell>
-                                                        ))}
-                                                    </TableRow>
-                                                ))}
-                                            </TableBody>
-                                        </Table>
-                                    </div>
-                                )}
-                            </CardContent>
-                        </Card>
-                    </TabsContent>
-                ))}
-            </Tabs>
+          <TabsContent value="bookings" className="space-y-6 mt-0">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <StatCard title="Total Bookings" value="17,100" subtext="Last 7 days"/>
+              <StatCard title="Confirmed" value="14,250" subtext="83.3%"/>
+              <StatCard title="Cancelled" value="1,250" subtext="7.3%"/>
+              <StatCard title="Cancellation Rate" value="7.3%" subtext="Target < 10%"/>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Bookings by Class</CardTitle>
+                </CardHeader>
+                <CardContent className="h-80">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie data={bookingClassData} cx="50%" cy="50%" innerRadius={80} outerRadius={120} paddingAngle={2} dataKey="value">
+                        {bookingClassData.map((entry, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]}/>)}
+                      </Pie>
+                      <Tooltip />
+                      <Legend />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>Daily Bookings Trend</CardTitle>
+                </CardHeader>
+                <CardContent className="h-80">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={revenueData} margin={{ top: 20, right: 30, bottom: 20, left: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb"/>
+                      <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#6b7280' }}/>
+                      <YAxis axisLine={false} tickLine={false} tick={{ fill: '#6b7280' }}/>
+                      <Tooltip />
+                      <Bar dataKey="value" fill="#f59e0b" radius={[4, 4, 0, 0]}/>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </CardContent>
+              </Card>
+            </div>
+          </TabsContent>
+
+          <TabsContent value="occupancy" className="mt-0">
+            {/* Similar structure for Occupancy */}
+            <Card>
+              <CardHeader><CardTitle>Occupancy Metrics</CardTitle></CardHeader>
+              <CardContent className="h-96 flex items-center justify-center">
+                <p className="text-muted text-lg">Occupancy charts will render here</p>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="routes" className="mt-0 space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>Top Popular Routes</CardTitle>
+              </CardHeader>
+              <CardContent className="h-96">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={routeData} layout="vertical" margin={{ top: 5, right: 30, left: 60, bottom: 5 }}>
+                    <CartesianGrid strokeDasharray="3 3" horizontal={false}/>
+                    <XAxis type="number"/>
+                    <YAxis dataKey="name" type="category"/>
+                    <Tooltip />
+                    <Bar dataKey="bookings" fill="#2563eb" radius={[0, 4, 4, 0]} barSize={32}/>
+                  </BarChart>
+                </ResponsiveContainer>
+              </CardContent>
+            </Card>
+          </TabsContent>
         </div>
-    );
-}
-
-// Helper to format revenue columns safely
-function keyMatch(key, keyword) {
-    return key.toLowerCase().includes(keyword.toLowerCase());
-}
+      </Tabs>
+    </div>);
+};
+const StatCard = ({ title, value, subtext }) => (<Card>
+    <CardContent className="p-6">
+      <p className="text-sm font-medium text-muted mb-2">{title}</p>
+      <h3 className="text-2xl font-bold">{value}</h3>
+      <p className="text-xs text-muted mt-2">{subtext}</p>
+    </CardContent>
+  </Card>);
+export default Reports;

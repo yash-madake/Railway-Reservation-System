@@ -1,3 +1,5 @@
+// Defence page
+import DefenceQuota from '@/pages/admin/DefenceQuota';
 import { createBrowserRouter } from 'react-router-dom';
 // Layouts
 import { PublicLayout } from '@/layouts/PublicLayout';
@@ -11,6 +13,7 @@ import { Landing } from '@/pages/public/Landing';
 import { Login } from '@/pages/public/Login';
 import { Register } from '@/pages/public/Register';
 import { ForgotPassword } from '@/pages/public/ForgotPassword';
+import AdminLogin from '@/pages/public/AdminLogin';
 // Passenger Pages
 import { Search } from '@/pages/passenger/Search';
 import { TrainDetails } from '@/pages/passenger/TrainDetails';
@@ -24,7 +27,6 @@ import { BookingDetails } from '@/pages/passenger/BookingDetails';
 import { PnrStatus } from '@/pages/passenger/PnrStatus';
 import { Profile } from '@/pages/passenger/Profile';
 // Admin Pages
-import AdminLogin from '@/pages/admin/AdminLogin';
 import Dashboard from '@/pages/admin/Dashboard';
 import TrainManagement from '@/pages/admin/TrainManagement';
 import CreateTrain from '@/pages/admin/CreateTrain';
@@ -36,11 +38,9 @@ import UserManagement from '@/pages/admin/UserManagement';
 import FareManagement from '@/pages/admin/FareManagement';
 import Reports from '@/pages/admin/Reports';
 import AuditLogs from '@/pages/admin/AuditLogs';
-import PaymentsManagement from '@/pages/admin/PaymentsManagement';
-import CancellationsManagement from '@/pages/admin/CancellationsManagement';
-import Analytics from '@/pages/admin/Analytics';
+import AdminDataTable from '@/pages/admin/AdminDataTable';
 import Monitoring from '@/pages/admin/Monitoring';
-
+import Analytics from '@/pages/admin/Analytics';
 export const router = createBrowserRouter([
     // ==========================================
     // PUBLIC ROUTES
@@ -57,16 +57,16 @@ export const router = createBrowserRouter([
                 element: <Login />,
             },
             {
-                path: '/admin/login',
-                element: <AdminLogin />,
-            },
-            {
                 path: '/register',
                 element: <Register />,
             },
             {
                 path: '/forgot-password',
                 element: <ForgotPassword />,
+            },
+            {
+                path: '/admin/login',
+                element: <AdminLogin />,
             },
             {
                 path: '/pnr',
@@ -145,6 +145,10 @@ export const router = createBrowserRouter([
                 element: <AdminLayout />,
                 children: [
                     {
+                    path: '/admin/defence-quota',
+                    element: <DefenceQuota />,
+                    },
+                    {
                         path: '/admin',
                         element: <Dashboard />,
                     },
@@ -170,11 +174,11 @@ export const router = createBrowserRouter([
                     },
                     {
                         path: '/admin/bookings',
-                        element: <BookingManagement />,
+                        element: <AdminDataTable type="bookings" />,
                     },
                     {
                         path: '/admin/users',
-                        element: <UserManagement />,
+                        element: <AdminDataTable type="users" />,
                     },
                     {
                         path: '/admin/fares',
@@ -182,27 +186,16 @@ export const router = createBrowserRouter([
                     },
                     {
                         path: '/admin/reports',
-                        element: <Reports />,
-                    },
-                    {
-                        path: '/admin/audit-logs',
-                        element: <AuditLogs />,
-                    },
-                    {
-                        path: '/admin/payments',
-                        element: <PaymentsManagement />,
-                    },
-                    {
-                        path: '/admin/cancellations',
-                        element: <CancellationsManagement />,
-                    },
-                    {
-                        path: '/admin/analytics',
                         element: <Analytics />,
                     },
                     {
-                        path: '/admin/monitoring',
-                        element: <Monitoring />,
+                        path: '/admin/audit-logs',
+                        element: <AdminDataTable type="audit" />
+                    },
+                    { path: '/admin/payments', element: <AdminDataTable type="payments" /> },
+                    { path: '/admin/cancellations', element: <AdminDataTable type="cancellations" /> },
+                    { path: '/admin/monitoring', element: <Monitoring /> },
+                    { path: '/admin/analytics', element: <Analytics />,
                     },
                 ],
             },

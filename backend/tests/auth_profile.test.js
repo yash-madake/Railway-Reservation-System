@@ -64,10 +64,10 @@ async function runProfileTests() {
   }
 
   try {
-    // 1. Unauthenticated request to /users/profile should fail with 401
+    // 1. Unauthenticated request to /api/v1/users/profile should fail with 401
     {
-      const res = await request('/users/profile');
-      assert(res.status === 401, 'Unauthenticated GET /users/profile returns 401');
+      const res = await request('/api/v1/users/profile');
+      assert(res.status === 401, 'Unauthenticated GET /api/v1/users/profile returns 401');
     }
 
     // 2. Test profile with Hrutuja's user record in database
@@ -84,7 +84,7 @@ async function runProfileTests() {
           { expiresIn: '1d' }
         );
 
-        const res = await request('/users/profile', {
+        const res = await request('/api/v1/users/profile', {
           headers: { Authorization: `Bearer ${token}` },
         });
 
@@ -115,7 +115,7 @@ async function runProfileTests() {
         { expiresIn: '1d' }
       );
 
-      const res = await request('/users/profile', {
+      const res = await request('/api/v1/users/profile', {
         headers: { Authorization: `Bearer ${token}` },
       });
 

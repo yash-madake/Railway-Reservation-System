@@ -1,165 +1,14 @@
-<div align="center">
+# RailSetu
 
-<img src="https://github.com/user-attachments/assets/118e4e95-2546-44cb-9594-65fcb67cc968" alt="Yatrio logo" width="100%">
+**Railway Ticket Booking and Management System**
 
-### Move Beyond Limits
-
-*A railway booking platform — live train search, PNR status, live tracking, and a full booking flow with Razorpay test payments.*
-
-<br>
-
-![React](https://img.shields.io/badge/React%20%2B%20Vite-Frontend-0080F8?style=for-the-badge&labelColor=04275B)
-![Node.js](https://img.shields.io/badge/Node.js%20%2B%20Express-Backend-3BB3FD?style=for-the-badge&labelColor=04275B)
-![MySQL](https://img.shields.io/badge/MySQL%208.4-Database-4479A1?style=for-the-badge&labelColor=04275B)
-![Payments](https://img.shields.io/badge/Razorpay-Test%20Mode-0080F8?style=for-the-badge&labelColor=04275B)
-![Status](https://img.shields.io/badge/Scope-MVP%20Demo-3BB3FD?style=for-the-badge&labelColor=04275B)
-
-<br>
-
-**[Overview](#-project-overview) · [Features](#-features) · [Tech Stack](#-tech-stack) · [Structure](#-project-structure) · [Run](#-how-to-run-the-project) · [Env](#-environment-variables) · [Status](#-project-status)**
-
-</div>
-
-<br>
+RailSetu is a modern railway reservation and management system designed to provide a seamless experience for passengers and administrators.
 
 ## 🚆 Project Overview
 
-Yatrio is a railway reservation and management system: passengers search for
-trains, book a seat and pay through Razorpay, while administrators manage the
-network and watch the numbers.
+RailSetu provides a complete platform for railway ticket reservation, passenger management, train management, booking management, and administrative operations.
 
-> Payments run in **Razorpay TEST MODE**, and every booking, PNR and ticket is a
-> **demo artifact** — no real IRCTC ticket booking is performed.
-
-The frontend is React + Vite, the backend is a single Express API serving every
-team, and all seven teams share one MySQL schema.
-
-```mermaid
-flowchart LR
-    subgraph Client["Browser"]
-        UI["React + Vite<br/>Passenger & Admin"]
-    end
-
-    subgraph API["Express API · backend/"]
-        AUTH["Auth &amp; Users<br/>T1"]
-        SEARCH["Stations &amp; Trains<br/>T2"]
-        PAY["Payment<br/>T5"]
-        ADMIN["Admin &amp; Analytics<br/>T7"]
-    end
-
-    subgraph Ext["External services"]
-        RAIL["IRCTC / railway API"]
-        RZ["Razorpay<br/>test mode"]
-        RDS["Redis<br/>cache &amp; rate limits"]
-    end
-
-    DB[("MySQL 8.4<br/>schema defaultdb")]
-
-    UI -->|"HTTPS"| API
-    AUTH --> DB
-    SEARCH --> DB
-    PAY --> DB
-    ADMIN --> DB
-    SEARCH <--> RAIL
-    PAY <--> RZ
-    API -.-> RDS
-
-    classDef ext fill:#eef,stroke:#557,color:#1f2933
-    classDef db fill:#efe,stroke:#474,color:#1f2933
-    class RAIL,RZ,RDS ext
-    class DB db
-```
-
-### The data model
-
-One schema, seven teams, stable table ownership.
-
-```mermaid
-erDiagram
-    users ||--o{ bookings : "makes"
-    users ||--o{ payment_methods : ""
-    stations ||--o{ train_routes : "stop on"
-    trains ||--o{ train_routes : "runs via"
-    trains ||--o{ train_running_days : "operates"
-    trains ||--o{ train_classes : "offers"
-    bookings ||--o{ payment_methods : ""
-    bookings ||--o{ payments : "is paid by"
-    bookings ||--o{ booking_passengers : ""
-    payments ||--o{ payment_transactions : "attempts"
-    payments ||--o{ refunds : "reversed by"
-    payments }o--o| payment_methods : "method_code"
-
-    users {
-        int id PK
-        varchar email UK
-        varchar password
-        enum role
-    }
-    stations {
-        int id PK
-        varchar station_code UK
-        varchar station_name
-        varchar city
-    }
-    trains {
-        int id PK
-        varchar train_number UK
-        varchar train_name
-    }
-    bookings {
-        int id PK
-        int user_id FK
-        varchar booking_ref
-    }
-    payments {
-        bigint payment_id PK
-        int booking_id
-        varchar gateway_order_id UK
-        bigint amount
-        enum status
-    }
-    payment_transactions {
-        bigint transaction_id PK
-        bigint payment_id FK
-        varchar gateway_order_id UK
-        enum event
-    }
-    refunds {
-        bigint refund_id PK
-        bigint payment_id FK
-        varchar gateway_refund_id UK
-        bigint amount
-    }
-    payment_methods {
-        int payment_method_id PK
-        varchar code UK
-    }
-    train_routes {
-        int id PK
-        int train_id FK
-        int station_id FK
-        int stop_sequence
-    }
-    train_running_days {
-        int id PK
-        int train_id FK
-        enum day
-    }
-    train_classes {
-        int id PK
-        int train_id FK
-        varchar class_code
-    }
-    booking_passengers {
-        int id PK
-        int booking_id FK
-        varchar full_name
-    }
-```
-
-> `booking_passengers`, `train_routes`, `train_running_days` and `train_classes`
-> come from Teams 3 and 4 and are the tables those teams' migrations create.
-> Team 5's four tables are detailed in [`PAYMENTS.md`](PAYMENTS.md) §12.
+The frontend is built with React and JavaScript/JSX, while the backend is built with Node.js and Express.js.
 
 ---
 
@@ -197,55 +46,36 @@ erDiagram
 
 ### Frontend
 
-* **React 18** + **Vite**
-* **React Router 7**
-* **TanStack Query 5**
-* **CSS** (design system in [`brandkit.md`](brandkit.md))
+* **React**
+* **Vite**
+* **CSS / Tailwind CSS**
+* **React Router**
 * **Lucide Icons**
 
 ### Backend
 
-* **Node.js 18+**
-* **Express 5**
-* **Sequelize 6** + **mysql2** — one shared connection layer for every team
-* **JWT Authentication** + **bcryptjs**
-* **Razorpay** — test mode, server-side signature verification
-* **express-rate-limit** + **ioredis**
-* **dotenv**
+* **Node.js**
+* **Express.js**
+* **JWT Authentication**
+* **bcryptjs**
 
 ### Database
 
-* **MySQL 8.4** — one schema, `defaultdb`, shared by all seven teams
-  * **Hosted:** Aiven, reached over TLS and verified against its CA
-  * **Local:** `yatrio_db`, created by `npm run db:migrate`
-  * 15 tables · 5 views · 12 stored procedures · 11 triggers
-  * Access it for every team through one Sequelize layer:
-    [`backend/README.md`](backend/README.md) · connect and browse:
-    [`backend/database/README.md`](backend/database/README.md)
-  * Team 5's payment schema in detail, with an ER diagram:
-    [`PAYMENTS.md`](PAYMENTS.md) §12
-* **Redis 7** *(optional)* — station cache and API rate limits.
-  See [`backend/REDIS_DOCUMENTATION.md`](backend/REDIS_DOCUMENTATION.md)
+* MySQL (the existing repository database integration)
 
 ---
 
 ## 📁 Project Structure
 
 ```text
-Yatrio/
+RailSetu/
 ├── backend/
 │   ├── src/
-│   │   ├── config/
 │   │   ├── controllers/
 │   │   ├── middleware/
-│   │   ├── models/
 │   │   ├── routes/
 │   │   ├── services/
-│   │   ├── utils/
 │   │   └── server.js
-│   ├── database/          # Team 5 — Sequelize migrations, seeders, SQL, certs
-│   ├── migrations/        # raw SQL, applied by runMigrations.js
-│   ├── tests/
 │   ├── package.json
 │   └── package-lock.json
 │
@@ -265,32 +95,32 @@ Yatrio/
 │   │   ├── passenger/
 │   │   └── public/
 │   ├── services/
-│   ├── utils/
-│   ├── App.jsx
-│   ├── main.jsx
-│   └── router.jsx
+│   ├── types/
+│   ├── App.tsx
+│   ├── main.tsx
+│   └── router.tsx
 │
 ├── package.json
 ├── package-lock.json
-├── vite.config.js
-├── jsconfig.json
+├── vite.config.ts
+├── tsconfig.json
 └── README.md
 ```
 
 ---
 
-## ▶️ How to Run the Project
+# ▶️ How to Run the Project
 
 ## 1. Clone the Repository
 
 ```bash
-git clone https://github.com/8DMuscian/Yatrio.git
+git clone https://github.com/BROKEN0103/RailSetu.git
 ```
 
 Navigate into the project:
 
 ```bash
-cd Yatrio
+cd RailSetu
 ```
 
 ---
@@ -327,52 +157,31 @@ cd ..
 
 ---
 
-## 🔐 Environment Variables
+# 🔐 Environment Variables
 
-The backend reads everything from `backend/.env`. Copy the template and fill it
-in:
+The backend uses environment variables for configuration.
 
-```bash
-cd backend
-cp .env.example .env
+Create a `.env` file inside the `backend` directory:
+
+```text
+backend/
+└── .env
 ```
 
-The groups that matter:
+Add the required environment variables according to your backend configuration.
+
+For example:
 
 ```env
-# ---- Server ----
 PORT=5000
 JWT_SECRET=your_secret_key
-
-# ---- Database (MySQL) ----
-# Hosted Aiven instance — note the port is NOT 3306.
-DB_HOST=mysql-yatrio-kharadeprathamesh7.b.aivencloud.com
-DB_PORT=11499
-DB_NAME=defaultdb
-DB_USER=avnadmin
-DB_PASSWORD=<from the Aiven console>
-# TLS, verified against Aiven's CA that ships with the repo
-DB_SSL=true
-DB_SSL_CA=database/certs/aiven-ca.pem
-
-# ---- Razorpay (test mode) ----
-RAZORPAY_KEY_ID=rzp_test_...
-RAZORPAY_KEY_SECRET=...
-
-# ---- Redis (optional) ----
-REDIS_HOST=127.0.0.1
-REDIS_PORT=6379
 ```
 
-> **Never commit `.env`.** It is gitignored. Only `VITE_RAZORPAY_KEY_ID` ever
-> reaches the browser — Vite inlines every `VITE_*` variable into the bundle, so
-> a secret placed there is published. See [`SECURITY.md`](SECURITY.md).
-
-Full list: [`backend/.env.example`](backend/.env.example).
+> Do not commit your `.env` file to GitHub if it contains passwords, API keys, database credentials, or other secrets.
 
 ---
 
-## 🚀 Start the Application
+# 🚀 Start the Application
 
 The frontend and backend should be run in **two separate terminals**.
 
@@ -400,7 +209,7 @@ You should see output similar to:
 Open another terminal and go to the project root:
 
 ```bash
-cd Yatrio
+cd RailSetu
 ```
 
 Then run:
@@ -419,7 +228,7 @@ Open that URL in your browser.
 
 ---
 
-## 🔄 Running Both Servers
+# 🔄 Running Both Servers
 
 You need both servers running at the same time:
 
@@ -452,70 +261,7 @@ The frontend communicates with the backend through the configured API endpoints.
 
 ---
 
-## ☁️ Deploying the frontend
-
-The frontend is a static Vite build deployed as a **Cloudflare Worker**
-(assets-only — no Worker script). `Frontend/wrangler.jsonc` holds all the
-config:
-
-```jsonc
-{
-	"name": "yatrio",
-	"compatibility_date": "2026-10-11",
-	"assets": {
-		"directory": "./dist",
-		"not_found_handling": "single-page-application"
-	}
-}
-```
-
-Build settings in the Cloudflare dashboard:
-
-| Setting | Value |
-| --- | --- |
-| Root directory | `Frontend` |
-| Build command | `npm run build` |
-| Deploy command | `npx wrangler deploy` |
-| Node version | 18 or newer |
-
-> `"name"` must match the Worker's name on the dashboard (`yatrio`) exactly, or
-> `wrangler deploy` aborts.
-
-> **Keep `wrangler.jsonc`.** Without it, wrangler 4.68+ falls back to
-> *auto-config*, which parses `vite.config.js` and fails with
-> `Error parsing file: .../vite.config.js`. Any config file disables it.
-
-### Environment variables
-
-Set these in the Cloudflare dashboard under build environment variables:
-
-```text
-VITE_API_URL=https://your-backend-host      # origin only, no /api prefix
-VITE_USE_MOCK_DATA=false                     # once real endpoints exist
-```
-
-Vite inlines `VITE_*` variables **at build time**, so these must be set before
-the build runs — changing them afterwards has no effect until a rebuild.
-
-> **Why the root loads but every other link 404s.** The app uses
-> `createBrowserRouter`, so every route is client-side. A static host looks for
-> a file at each path and finds none, so it returns 404 — while `/` works,
-> which is what makes it look random. `assets.not_found_handling` fixes it by
-> serving `/index.html` for any request that matches no asset.
->
-> If you ever deploy the frontend somewhere else, the equivalent is "rewrite
-> all unmatched paths to `/index.html`". On Cloudflare **Pages** that is the
-> `public/_redirects` file syntax, which is why it is not used here.
-
-### Deploying the backend
-
-The backend is a Node/Express app, not yet deployed. It cannot run on
-Cloudflare Workers without a compatibility flag and some adaptation — treat
-that as separate work, and set `VITE_API_URL` once it has a public URL.
-
----
-
-## 🧪 Development
+# 🧪 Development
 
 ### Frontend
 
@@ -544,7 +290,7 @@ npm run preview
 
 ---
 
-## 🔮 Future Development
+# 🔮 Future Development
 
 The project can be extended with:
 
@@ -563,25 +309,21 @@ The project can be extended with:
 
 ---
 
-## 📌 Project Status
+# 📌 Project Status
 
-| Component | Status |
-| --- | --- |
-| Frontend | ✅ Completed — passenger, admin and payment screens |
-| Backend | ✅ Completed — one Express API, four modules mounted at the root |
-| Database | ✅ 15 tables, 5 views, 12 stored procedures, 11 triggers — one MySQL schema |
-| API Integration | 🚧 Teams 3, 4 and 6 have not landed their endpoints yet |
-| Authentication | ✅ Register, login, JWT and role middleware |
+| Component       | Status                      |
+| --------------- | --------------------------- |
+| Frontend        | ✅ Completed                 |
+| Backend         | 🚧 Under Development        |
+| Database        | 🚧 Planned / In Development |
+| API Integration | 🚧 In Development           |
+| Authentication  | 🚧 In Development           |
 
 ---
 
-## 👨‍💻 Author
+# 👨‍💻 Author
 
-**Kharade Prathamesh Bajarang** — [8DMuscian](https://github.com/8DMuscian)
-
-Built by a seven-team group project: Auth & Users, Railway Search, Train
-Details, Booking & Passengers, Payment & Transactions, PNR & Live Tracking, and
-Admin & Analytics.
+**BROKEN0103**
 
 ---
 
@@ -589,43 +331,51 @@ Admin & Analytics.
 
 This project is developed for educational and development purposes.
 
----
+## Team 7 — Admin, Analytics & System Infrastructure
 
-## Team 7: Admin, Analytics & System Infrastructure
+Team 7 extends the existing Yatrio/RailSetu application with a real admin control centre rather than static dashboard mock data.
 
-### Scope
-Team 7 implements the administrative observation, reporting, and system control layer. This includes the internal React admin shell, authentication guards, dynamic dashboard charting, and deep backend integrations for operational visibility.
+### Admin routes
+- `/admin` — operational KPIs and recent bookings
+- `/admin/users` — server-side user search and pagination
+- `/admin/bookings` — server-side booking search and pagination
+- `/admin/payments` — payment reporting
+- `/admin/cancellations` — cancellation reporting
+- `/admin/analytics` and `/admin/reports` — reporting charts
+- `/admin/audit-logs` — auditable administrative events
+- `/admin/monitoring` — API latency/error and Redis health
 
-### Frontend Routes (React)
-- `/admin/login` - Premium Yatrio administrative authentication
-- `/admin` - Operational dashboard overview
-- `/admin/users` - Passenger and admin management
-- `/admin/trains` - Fleet read-only observation
-- `/admin/bookings`, `/admin/payments`, `/admin/cancellations` - Transactional interfaces
-- `/admin/monitoring` - Real-time system telemetry and API health logs
-- `/admin/reports` - Dynamic datasets with CSV export capabilities
-- `/admin/analytics` - Visual charting workspaces
-- `/admin/audit-logs` - Security event timeline
+### Team 7 API
+All endpoints below require a valid JWT with `role=admin`:
+`GET /api/v1/admin/dashboard`, `/users`, `/bookings`, `/payments`, `/cancellations`, `/audit-logs`, `/analytics`, `/monitoring`.
 
-### Backend Routes (Express)
-Mounted under `/admin/`:
-- `GET /dashboard`, `GET /users`, `GET /trains`, `GET /bookings`, `GET /payments`, `GET /cancellations`, `GET /audit-logs`, `GET /reports`, `GET /analytics`, `GET /monitoring`, `GET /monitoring/api`, `GET /monitoring/pnr`
+### Database
+The current repository already uses MySQL, so Team 7 preserves that existing integration instead of introducing a second database engine. Migration `009_team7_admin.sql` adds booking/payment/cancellation reporting tables, audit/API logs, indexes, reporting views and stored functions.
 
-### Database Objects (MySQL)
-- **Tables**: `audit_logs`, `api_request_logs`
-- **Views**: `vw_booking_summary`, `vw_revenue_summary`, `vw_train_occupancy`, `vw_user_activity`
-- **Procedures**: `get_dashboard_statistics()`, `get_daily_revenue()`, `get_popular_routes()`, `get_train_occupancy()`
-- **Indexes**: Includes composite `idx_users_role_status` and timestamp filters for telemetry tables.
+### Local setup
+1. Copy `backend/.env.example` to `backend/.env` and set your local MySQL values.
+2. Run `cd backend && npm install && npm run migrate`.
+3. Run `npm run seed:team7` to create the demo administrator and reporting data. The default demo password is `Admin@12345`; set `ADMIN_SEED_PASSWORD` before seeding if you want another value.
+4. Start the backend with `npm run dev`.
+5. In another terminal, run `cd Frontend && npm install && npm run dev`.
 
-### Caching & Telemetry (Redis)
-Team 7 utilizes `ioredis` strictly connected to `127.0.0.1:6379`. It provides:
-- Automatic short-TTL caching for heavy dashboard KPI queries.
-- Health telemetry tracking inside `/admin/monitoring`.
-- API request rate limiting.
+Never commit `.env`, database credentials, JWT secrets or payment credentials.
 
-### Demo Limitations & Cross-Team Integrations
-Team 7 respects strict cross-team domain boundaries. Specifically, **Team 4 (Bookings)**, **Team 5 (Payments)**, and **Team 6 (PNR Live)** schemas are currently pending migration integrations.
+## Admin portal: import the supplied railway datasets
 
-**Until these tables become active:**
-- The frontend displays honest `"Integration Pending"` empty states for booking and payment management pages.
-- The dashboard and analytics engine will dynamically estimate `"proxy revenue"` and booking volume snapshots strictly via the `train_classes.available_seats` metric. No transactional fields are fabricated. As soon as the respective teams' schemas are integrated into the MySQL DB, these admin interfaces will instantly consume the live data.
+The project includes the source files supplied for the admin data layer under `backend/data/source/` and a normalized extraction of the workbook under `backend/data/import/workbook-data.json`.
+
+From the `backend` directory, after setting up `.env` and running migrations:
+
+```powershell
+npm run import:provided-data
+```
+
+This imports/upserts station master data, train master records, ordered route stops, and sample PNR records from the supplied sources into MySQL. It is designed to be re-run safely for station/train/PNR records. The CSV datasets are historic (2015/2017), and the workbook contains illustrative sample PNRs; these are not live railway or IRCTC feeds. The importer does not fabricate payment transactions or user accounts from passenger names.
+
+### Admin data boundaries
+
+- Stations, trains, and route stops are seeded from the supplied sources.
+- PNR records in the workbook are imported into the bookings table as reference/demo booking rows.
+- Payment, cancellation, user, and API-monitoring pages depend on their corresponding MySQL tables and will show empty states until those tables have real records.
+- Keep admin JWT authorization enabled. Do not make admin endpoints public to work around an authentication error.

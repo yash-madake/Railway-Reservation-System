@@ -1,8 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, } from "react";
 import authFetch from "../utils/authFetch";
-import { API_BASE_URL } from "@/api/client";
-const API_URL = `${API_BASE_URL}/auth`;
-const PROFILE_URL = `${API_BASE_URL}/users/profile`;
+const API_URL = "http://localhost:5000/api/v1/auth";
+const PROFILE_URL = "http://localhost:5000/api/v1/users/profile";
 const AuthContext = createContext(undefined);
 export function AuthProvider({ children, }) {
     const [user, setUser] = useState(null);
@@ -71,6 +70,7 @@ export function AuthProvider({ children, }) {
         localStorage.setItem("railsetu_token", result.token);
         localStorage.setItem("railconnect_user", JSON.stringify(loggedInUser));
         setUser(loggedInUser);
+        return loggedInUser;
     };
     // REGISTER
     const register = async (data) => {

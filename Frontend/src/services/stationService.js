@@ -1,22 +1,20 @@
-import { stations } from '@/data/stations';
-
-const USE_MOCK = import.meta.env.VITE_USE_MOCK_DATA !== 'false';
-const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+import { apiClient } from '@/api/client';
 
 export const stationService = {
-  getAllStations: async () => {
-    if (USE_MOCK) {
-      await delay(300);
-      return stations;
-    }
-    throw new Error('API not implemented');
+  async listAdmin(params = {}) {
+    return apiClient.get('/admin/stations', params);
   },
-
-  getStationById: async (id) => {
-    if (USE_MOCK) {
-      await delay(200);
-      return stations.find((s) => s.id === id);
-    }
-    throw new Error('API not implemented');
+  async createAdmin(payload) {
+    return apiClient.post('/admin/stations', payload);
+  },
+  async updateAdmin(id, payload) {
+    return apiClient.put(`/admin/stations/${id}`, payload);
+  },
+  async deactivateAdmin(id) {
+    return apiClient.patch(`/admin/stations/${id}/deactivate`);
+  },
+  async getAllStations(params = {}) {
+    const result = await apiClient.get('/stations', { page: 1, limit: 100, ...params });
+    return result;
   }
 };

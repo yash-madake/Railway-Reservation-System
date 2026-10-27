@@ -113,7 +113,7 @@ async function validateStationPair(fromCode, toCode) {
   // Check database for existence of both stations
   try {
     const [rows] = await pool.query(
-      `SELECT station_code, station_name FROM stations WHERE station_code IN (?, ?) AND status = 'active';`,
+      'SELECT station_code, station_name FROM stations WHERE station_code IN (?, ?) AND status = "active";',
       [normalizedFrom, normalizedTo]
     );
 

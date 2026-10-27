@@ -1,58 +1,42 @@
 /**
- * Redis-backed Cache Service for shared infrastructure (Team 7)
- * Made backward-compatible with the original interface for Team 2
+ * Simple in-memory TTL cache for Team 2 Railway service
  */
-const { redis } = require('../../config/redis');
-
 class CacheService {
   constructor(defaultTtlSeconds = 300) {
-    this.defaultTtl = parseInt(process.env.CACHE_TTL_SECONDS, 10) || defaultTtlSeconds;
+    this.cache = new Map();
+    this.defaultTtl = (parseInt(process.env.CACHE_TTL_SECONDS, 10) || defaultTtlSeconds) * 1000;
   }
 
-  async get(key) {
-    try {
-      const data = await redis.get(key);
-      if (!data) return null;
-      return JSON.parse(data);
-    } catch (err) {
-      console.error(`Cache get error for key ${key}:`, err);
+  get(key) {
+    const item = this.cache.get(key);
+    if (!item) return null;
+
+    if (Date.now() > item.expiry) {
+      this.cache.delete(key);
       return null;
     }
+
+    return item.value;
   }
 
-  async set(key, value, ttlSeconds) {
-    try {
-      const ttl = ttlSeconds ? ttlSeconds : this.defaultTtl;
-      const data = JSON.stringify(value);
-      await redis.set(key, data, 'EX', ttl);
-    } catch (err) {
-      console.error(`Cache set error for key ${key}:`, err);
-    }
+  set(key, value, ttlSeconds) {
+    const ttl = ttlSeconds ? ttlSeconds * 1000 : this.defaultTtl;
+    this.cache.set(key, {
+      value,
+      expiry: Date.now() + ttl,
+    });
   }
 
-  async del(key) {
-    try {
-      await redis.del(key);
-    } catch (err) {
-      console.error(`Cache del error for key ${key}:`, err);
-    }
+  del(key) {
+    this.cache.delete(key);
   }
 
-  async flush() {
-    try {
-      await redis.flushdb();
-    } catch (err) {
-      console.error('Cache flush error:', err);
-    }
+  flush() {
+    this.cache.clear();
   }
 
-  async size() {
-    try {
-      return await redis.dbsize();
-    } catch (err) {
-      console.error('Cache size error:', err);
-      return 0;
-    }
+  size() {
+    return this.cache.size;
   }
 }
 
