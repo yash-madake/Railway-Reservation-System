@@ -106,9 +106,11 @@ async function runMigrations() {
       await connection.query(sql);
       console.log(`  ✓ Successfully executed ${file}`);
     } catch (err) {
-      // Check if error is innocuous (e.g. index already exists)
+      // Check if error is innocuous (e.g. index or column already exists)
       if (err.code === 'ER_DUP_KEYNAME') {
         console.log(`  ℹ Index already exists in ${file}, continuing...`);
+      } else if (err.code === 'ER_DUP_FIELDNAME') {
+        console.log(`  ℹ Column already exists in ${file}, continuing...`);
       } else {
         console.error(`  ✗ Error in ${file}:`, err.message);
         throw err;

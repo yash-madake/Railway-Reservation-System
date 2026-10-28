@@ -256,8 +256,8 @@ const loginUser = async (req, res) => {
 
         // The password is right, but the email has never been confirmed.
         // Checked only after the password so this response cannot be used to
-        // find out which emails have accounts.
-        if (Number(user.is_email_verified) === 0) {
+        // find out which emails have accounts. Admins are exempt from email OTP.
+        if (user.role !== 'admin' && Number(user.is_email_verified) === 0) {
             return res.status(403).json({
                 message: "Please verify your email address before logging in.",
                 code: "EMAIL_NOT_VERIFIED",

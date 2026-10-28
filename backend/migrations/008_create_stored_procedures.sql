@@ -28,11 +28,10 @@ BEGIN
         s.station_code,
         s.station_name,
         s.city,
-        st.state_name AS state,
+        s.state,
         s.timezone,
         s.status
     FROM stations s
-    LEFT JOIN states st ON st.state_id = s.state_id
     WHERE s.status = 'active'
       AND (
           p_search IS NULL 
@@ -120,11 +119,7 @@ BEGIN
             SELECT JSON_ARRAYAGG(
                 JSON_OBJECT(
                     'classCode', tc.class_code,
-                    -- From the `classes` lookup, not `train_classes`: migration 011
-                    -- dropped `train_classes.class_name` because class_code ->
-                    -- class_name is a transitive dependency, not per-train data.
-                    'className', cl.class_name,
-                    'bayWidth', cl.berth_bay_width,
+                    'className', tc.class_name,
                     'fare', tc.base_fare,
                     'availableSeats', tc.available_seats,
                     'totalSeats', tc.total_seats,
@@ -132,7 +127,6 @@ BEGIN
                 )
             )
             FROM train_classes tc
-            JOIN classes cl ON cl.class_code = tc.class_code
             WHERE tc.train_id = t.id
         ) AS classes_json
     FROM trains t
