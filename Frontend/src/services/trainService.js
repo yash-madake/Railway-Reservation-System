@@ -1,6 +1,13 @@
 import { apiClient } from '@/api/client';
 
-/** Read-only train timetable operations used by the Train Status page. */
+/**
+ * Train operations.
+ *
+ * The timetable reads (`search` … `getQuotas`) come from main and back the
+ * Train Status / search pages; the admin methods (`listAdmin` …
+ * `getTrainById`) come from the admin project and back the Team 7 console.
+ * Both sets are kept — different callers on each side of the merge.
+ */
 export const trainService = {
   search: async (query) => apiClient.get('/trains/search', {
     q: query,
@@ -33,5 +40,37 @@ export const trainService = {
   },
 
   getQuotas: async () => apiClient.get('/trains/quotas'),
+
+  // --- Admin console (Team 7) ---
+  async listAdmin(params = {}) {
+    return apiClient.get('/admin/trains', params);
+  },
+  async createAdmin(payload) {
+    return apiClient.post('/admin/trains', payload);
+  },
+  async deactivateAdmin(id) {
+    return apiClient.patch(`/admin/trains/${id}/deactivate`);
+  },
+  async deleteAdmin(id) {
+    return apiClient.delete(`/admin/trains/${id}`);
+  },
+  async getAdmin(id) {
+    return apiClient.get(`/admin/trains/${id}`);
+  },
+  async addRouteStop(id, payload) {
+    return apiClient.post(`/admin/trains/${id}/routes`, payload);
+  },
+  async deleteRouteStop(trainId, routeId) {
+    return apiClient.delete(`/admin/trains/${trainId}/routes/${routeId}`);
+  },
+  async searchTrains(params) {
+    return apiClient.get('/trains/search', params);
+  },
+  async getAllTrains() {
+    return apiClient.get('/trains/search', { page: 1, limit: 100 });
+  },
+  async getTrainById(id) {
+    return apiClient.get(`/trains/${id}`);
+  },
 };
 

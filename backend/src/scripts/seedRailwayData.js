@@ -1,5 +1,5 @@
 const path = require('path');
-const db = require('../config/db');
+const mysql = require('mysql2/promise');
 require('dotenv').config({ path: path.join(__dirname, '../../.env') });
 
 const stationsData = [
@@ -219,18 +219,22 @@ async function seedRailwayData() {
   console.log('    Seeding Team 2 Railway Master Data (MySQL)    ');
   console.log('==================================================');
 
-  // The shared Sequelize connection. Its transaction() wrapper commits when the
-  // callback resolves and rolls back when it throws, so the handle below keeps
-  // the mysql2 connection shape this script was written against.
-  await db.sequelize.transaction(async (transaction) => {
-    const connection = db.transactionHandle(transaction);
+  const pool = mysql.createPool({
+    host: process.env.DB_HOST || 'localhost',
+    user: process.env.DB_USER || 'root',
+    password: process.env.DB_PASSWORD || '',
+    database: process.env.DB_NAME || 'yatrio_db',
+    port: process.env.DB_PORT || 3306
+  });
 
-    try {
-      await connection.beginTransaction();
+  const connection = await pool.getConnection();
 
-      // 1. Insert Stations
-      console.log('Seeding stations...');
-      const stationIdMap = new Map();
+  try {
+    await connection.beginTransaction();
+
+    // 1. Insert Stations
+    console.log('Seeding stations...');
+    const stationIdMap = new Map();
 
       // `stations.state` became `state_id` when migration 011 normalised the
       // schema, so the state name is resolved through the `states` lookup --
@@ -344,12 +348,13 @@ async function seedRailwayData() {
     console.log(`  ✓ Successfully seeded ${trainsData.length} trains with routes, running days, and classes.`);
     console.log('Railway master data seed finished successfully!\n');
   } catch (err) {
+    await connection.rollback();
     console.error('Seed error, rolled back:', err);
     throw err;
+  } finally {
+    connection.release();
+    await pool.end();
   }
-  });
-
-  await db.end();
 }
 
 if (require.main === module) {

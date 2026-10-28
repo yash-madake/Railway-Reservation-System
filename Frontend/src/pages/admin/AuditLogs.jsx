@@ -1,150 +1,154 @@
-import React, { useEffect, useState } from 'react';
-import { Card } from '@/components/ui/Card';
+import React, { useState } from 'react';
+import { Search, Download } from 'lucide-react';
+import { Card, CardContent } from '@/components/ui/Card';
+import { Button } from '@/components/ui/Button';
+import { Input } from '@/components/ui/Input';
+import { Badge } from '@/components/ui/Badge';
+import { Select } from '@/components/ui/Select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/Table';
 import { Pagination } from '@/components/ui/Pagination';
-import { Input } from '@/components/ui/Input';
-import { Skeleton } from '@/components/ui/Skeleton';
-import { Alert } from '@/components/ui/Alert';
-import { adminService } from '@/services/adminService';
-import { time24, dateLong } from '@/lib/format';
-import { ShieldAlert, Search } from 'lucide-react';
-
-export default function AuditLogs() {
-    const [logs, setLogs] = useState([]);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState(null);
-    const [total, setTotal] = useState(0);
-    
-    // Pagination & Filters
-    const [page, setPage] = useState(1);
-    const [pageSize] = useState(15);
-    const [action, setAction] = useState('');
-    const [actionTerm, setActionTerm] = useState('');
-
-    useEffect(() => {
-        const fetchLogs = async () => {
-            try {
-                setLoading(true);
-                const response = await adminService.getAuditLogs({
-                    page,
-                    pageSize,
-                    action: actionTerm || undefined
-                });
-                setLogs(response.data);
-                setTotal(response.total);
-                setError(null);
-            } catch (err) {
-                setError(err.message || 'Failed to load audit logs.');
-            } finally {
-                setLoading(false);
-            }
-        };
-
-        fetchLogs();
-    }, [page, pageSize, actionTerm]);
-
-    const handleSearch = (e) => {
-        e.preventDefault();
-        setActionTerm(action);
-        setPage(1);
+import { Modal } from '@/components/ui/Modal';
+const AuditLogs = () => {
+    const [searchTerm, setSearchTerm] = useState('');
+    const [modalOpen, setModalOpen] = useState(false);
+    const [selectedLog, setSelectedLog] = useState(null);
+    // Mock data
+    const logs = [
+        { id: 'AL-1023', timestamp: '2026-10-15 14:30:22', user: 'admin@railconnect.com', action: 'UPDATED', module: 'Trains', recordId: '12951', ip: '192.168.1.105', status: 'SUCCESS' },
+        { id: 'AL-1024', timestamp: '2026-10-15 15:10:05', user: 'staff@railconnect.com', action: 'CREATED', module: 'Schedules', recordId: 'SCH-8992', ip: '10.0.0.45', status: 'SUCCESS' },
+        { id: 'AL-1025', timestamp: '2026-10-15 16:45:11', user: 'admin@railconnect.com', action: 'DELETED', module: 'Fares', recordId: 'FR-221', ip: '192.168.1.105', status: 'SUCCESS' },
+        { id: 'AL-1026', timestamp: '2026-10-16 09:12:33', user: 'system', action: 'CANCELLED', module: 'Bookings', recordId: 'PNR-2435678904', ip: 'localhost', status: 'SUCCESS' },
+        { id: 'AL-1027', timestamp: '2026-10-16 10:05:19', user: 'admin@railconnect.com', action: 'UPDATED', module: 'Users', recordId: 'USR-773', ip: '192.168.1.112', status: 'FAILED' },
+    ];
+    const getActionBadge = (action) => {
+        switch (action) {
+            case 'CREATED': return <Badge className="bg-success text-white">Created</Badge>;
+            case 'UPDATED': return <Badge className="bg-primary text-white">Updated</Badge>;
+            case 'DELETED': return <Badge className="bg-error text-white">Deleted</Badge>;
+            case 'CANCELLED': return <Badge className="bg-warning text-white">Cancelled</Badge>;
+            default: return <Badge variant="secondary">{action}</Badge>;
+        }
     };
+    const handleRowClick = (log) => {
+        setSelectedLog(log);
+        setModalOpen(true);
+    };
+    return (<div className="p-6 max-w-7xl mx-auto space-y-6">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <h1 className="text-2xl font-bold text-foreground">Audit Logs</h1>
+        <Button variant="outline"><Download className="mr-2 h-4 w-4"/> Export Logs</Button>
+      </div>
 
-    return (
-        <div className="space-y-6">
-            <div>
-                <h1 className="text-h2 font-bold tracking-tight text-ink">Audit Logs</h1>
-                <p className="text-body text-ink-soft">System-wide operational tracking and security events.</p>
+      <Card>
+        <CardContent className="p-4 sm:p-6 space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="relative md:col-span-2">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted"/>
+              <Input placeholder="Search by User, Record ID or IP..." className="pl-9" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)}/>
+            </div>
+            <Select>
+              <option value="">All Modules</option>
+              <option value="trains">Trains</option>
+              <option value="bookings">Bookings</option>
+              <option value="users">Users</option>
+            </Select>
+            <Select>
+              <option value="">All Actions</option>
+              <option value="created">Created</option>
+              <option value="updated">Updated</option>
+              <option value="deleted">Deleted</option>
+            </Select>
+          </div>
+
+          <div className="border rounded-md overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Timestamp</TableHead>
+                  <TableHead>User</TableHead>
+                  <TableHead>Action</TableHead>
+                  <TableHead>Module</TableHead>
+                  <TableHead>Record ID</TableHead>
+                  <TableHead>Status</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {logs.map((log) => (<TableRow key={log.id} className="cursor-pointer hover:bg-gray-50" onClick={() => handleRowClick(log)}>
+                    <TableCell className="whitespace-nowrap text-xs font-medium text-muted">{log.timestamp}</TableCell>
+                    <TableCell className="font-medium text-sm">{log.user}</TableCell>
+                    <TableCell>{getActionBadge(log.action)}</TableCell>
+                    <TableCell>{log.module}</TableCell>
+                    <TableCell className="font-mono text-xs">{log.recordId}</TableCell>
+                    <TableCell>
+                      <Badge variant={log.status === 'SUCCESS' ? 'success' : 'error'}>{log.status}</Badge>
+                    </TableCell>
+                  </TableRow>))}
+              </TableBody>
+            </Table>
+          </div>
+
+          <div className="mt-4 flex justify-end">
+            <Pagination currentPage={1} totalPages={25} onPageChange={() => { }}/>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title="Audit Log Details" className="max-w-2xl">
+        {selectedLog && (<div className="space-y-6">
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-y-4 gap-x-6 bg-gray-50 p-4 rounded-lg">
+              <div>
+                <p className="text-xs text-muted font-semibold uppercase">Log ID</p>
+                <p className="font-mono text-sm">{selectedLog.id}</p>
+              </div>
+              <div>
+                <p className="text-xs text-muted font-semibold uppercase">Timestamp</p>
+                <p className="text-sm">{selectedLog.timestamp}</p>
+              </div>
+              <div>
+                <p className="text-xs text-muted font-semibold uppercase">Status</p>
+                <Badge variant={selectedLog.status === 'SUCCESS' ? 'success' : 'error'} className="mt-1">{selectedLog.status}</Badge>
+              </div>
+              <div>
+                <p className="text-xs text-muted font-semibold uppercase">User</p>
+                <p className="text-sm">{selectedLog.user}</p>
+              </div>
+              <div>
+                <p className="text-xs text-muted font-semibold uppercase">IP Address</p>
+                <p className="font-mono text-sm">{selectedLog.ip}</p>
+              </div>
             </div>
 
-            <Card className="p-5">
-                <form onSubmit={handleSearch} className="flex gap-4 mb-6">
-                    <div className="flex-1 max-w-sm relative">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-soft size-4" />
-                        <Input
-                            placeholder="Filter by action (e.g. LOGIN)..."
-                            value={action}
-                            onChange={(e) => setAction(e.target.value)}
-                            className="pl-9"
-                        />
-                    </div>
-                    <button type="submit" className="h-11 px-5 rounded-control bg-navy text-white text-sm font-semibold transition-colors hover:bg-navy-700">
-                        Filter
-                    </button>
-                </form>
+            <div className="space-y-2">
+              <h4 className="font-semibold text-sm border-b pb-2">Action Details</h4>
+              <div className="grid grid-cols-2 gap-4 mt-2">
+                <div>
+                  <p className="text-xs text-muted">Action</p>
+                  <p className="font-medium">{selectedLog.action}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted">Module & Record</p>
+                  <p className="font-medium">{selectedLog.module} / {selectedLog.recordId}</p>
+                </div>
+              </div>
+            </div>
 
-                {error ? (
-                    <Alert variant="error" icon={<ShieldAlert aria-hidden="true" />}>
-                        {error}
-                    </Alert>
-                ) : loading ? (
-                    <div className="space-y-4">
-                        {[1, 2, 3, 4, 5].map(i => <Skeleton key={i} className="h-12 w-full rounded-control" />)}
-                    </div>
-                ) : logs.length === 0 ? (
-                    <div className="py-12 text-center text-ink-soft">
-                        No audit logs found.
-                    </div>
-                ) : (
-                    <>
-                        {/* Mobile Card View */}
-                        <div className="grid gap-4 md:hidden">
-                            {logs.map(log => (
-                                <div key={log.id} className="rounded-card border border-line-mid bg-white p-4 space-y-3">
-                                    <div className="flex justify-between items-start">
-                                        <div>
-                                            <div className="font-medium text-ink">{log.action}</div>
-                                            <div className="text-sm text-ink-soft">{log.entity}</div>
-                                        </div>
-                                        <div className="text-right">
-                                            <div className="text-sm font-semibold text-ink num">{log.actor_id || 'SYSTEM'}</div>
-                                            <div className="text-caption font-mono text-ink-soft mt-1">{log.entity_id}</div>
-                                        </div>
-                                    </div>
-                                    <div className="text-sm border-t border-line-light pt-3 text-ink-soft num">
-                                        {dateLong(log.timestamp)} <span className="mx-1">·</span> {time24(log.timestamp)}
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
+            <div className="space-y-2">
+              <h4 className="font-semibold text-sm border-b pb-2">Payload Details</h4>
+              <div className="bg-gray-900 rounded p-4 overflow-auto max-h-48">
+                <pre className="text-xs text-green-400 font-mono">
+                  {JSON.stringify({
+                "old_values": { "status": "ACTIVE", "seats": 120 },
+                "new_values": { "status": "INACTIVE", "seats": 120 }
+            }, null, 2)}
+                </pre>
+              </div>
+            </div>
 
-                        {/* Desktop Table View */}
-                        <div className="hidden md:block overflow-hidden rounded-card border border-line-mid bg-white">
-                            <Table className="w-full text-left">
-                                <TableHeader className="bg-surface-sunken">
-                                    <TableRow>
-                                        <TableHead>Timestamp</TableHead>
-                                        <TableHead>Actor ID</TableHead>
-                                        <TableHead>Action</TableHead>
-                                        <TableHead>Entity</TableHead>
-                                        <TableHead>Identifier</TableHead>
-                                    </TableRow>
-                                </TableHeader>
-                                <TableBody className="divide-y divide-line">
-                                    {logs.map((log) => (
-                                        <TableRow key={log.id} className="transition-colors hover:bg-surface-sunken/70">
-                                            <TableCell className="num text-ink-soft whitespace-nowrap">
-                                                {dateLong(log.timestamp)} <span className="mx-1">·</span> {time24(log.timestamp)}
-                                            </TableCell>
-                                            <TableCell className="font-semibold text-ink num">{log.actor_id || 'SYSTEM'}</TableCell>
-                                            <TableCell className="font-medium text-ink">{log.action}</TableCell>
-                                            <TableCell>{log.entity}</TableCell>
-                                            <TableCell className="font-mono text-sm">{log.entity_id}</TableCell>
-                                        </TableRow>
-                                    ))}
-                                </TableBody>
-                            </Table>
-                        </div>
-
-                        <div className="mt-6 flex justify-end">
-                            <Pagination 
-                                currentPage={page} 
-                                totalPages={Math.ceil(total / pageSize)} 
-                                onPageChange={setPage} 
-                            />
-                        </div>
-                    </>
-                )}
-            </Card>
-        </div>
-    );
-}
+            <div className="flex justify-end pt-4 border-t">
+              <Button onClick={() => setModalOpen(false)}>Close</Button>
+            </div>
+          </div>)}
+      </Modal>
+    </div>);
+};
+export default AuditLogs;

@@ -1,6 +1,7 @@
+import { ShieldCheck } from 'lucide-react';
 import React, { useState } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Train, MapPin, Calendar, Ticket, Users, IndianRupee, FileText, ShieldAlert, LogOut, Menu, ArrowLeft } from 'lucide-react';
+import { LayoutDashboard, Train, MapPin, Calendar, Ticket, Users, IndianRupee, FileText, ShieldAlert, LogOut, Menu, ArrowLeft, CreditCard, Ban, Activity, BarChart3 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Logo } from '@/components/layout/Logo';
 import { Dropdown } from '@/components/ui/Dropdown';
@@ -15,15 +16,23 @@ export function AdminLayout() {
         navigate('/login');
     };
     const navItems = [
-        { to: '/admin', icon: LayoutDashboard, label: 'Dashboard', end: true },
-        { to: '/admin/trains', icon: Train, label: 'Trains' },
-        { to: '/admin/stations', icon: MapPin, label: 'Stations' },
-        { to: '/admin/schedules', icon: Calendar, label: 'Schedules' },
-        { to: '/admin/bookings', icon: Ticket, label: 'Bookings' },
-        { to: '/admin/users', icon: Users, label: 'Users' },
-        { to: '/admin/fares', icon: IndianRupee, label: 'Fares' },
-        { to: '/admin/reports', icon: FileText, label: 'Reports' },
-        { to: '/admin/audit-logs', icon: ShieldAlert, label: 'Audit Logs' },
+      { to: '/admin', icon: LayoutDashboard, label: 'Dashboard', end: true },
+      { to: '/admin/trains', icon: Train, label: 'Trains' },
+      { to: '/admin/stations', icon: MapPin, label: 'Stations' },
+      { to: '/admin/schedules', icon: Calendar, label: 'Schedules' },
+      { to: '/admin/bookings', icon: Ticket, label: 'Bookings' },
+      { to: '/admin/users', icon: Users, label: 'Users' },
+
+      // NEW: Defence Quota
+      { to: '/admin/defence-quota', icon: ShieldCheck, label: 'Defence Quota' },
+
+      { to: '/admin/fares', icon: IndianRupee, label: 'Fares' },
+      { to: '/admin/reports', icon: FileText, label: 'Reports' },
+      { to: '/admin/audit-logs', icon: ShieldAlert, label: 'Audit Logs' },
+      { to: '/admin/payments', icon: CreditCard, label: 'Payments' },
+      { to: '/admin/cancellations', icon: Ban, label: 'Cancellations' },
+      { to: '/admin/analytics', icon: BarChart3, label: 'Analytics' },
+      { to: '/admin/monitoring', icon: Activity, label: 'Monitoring' },
     ];
     const SidebarContent = () => (<div className="flex flex-col h-full bg-navy text-white border-r border-white/10">
       <div className={cn("h-16 flex items-center border-b border-white/10 px-5", isSidebarOpen ? "justify-between" : "justify-center")}>
