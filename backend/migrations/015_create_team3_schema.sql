@@ -3,7 +3,7 @@
 
 -- 1. Extend master tables with railway zone attributes (idempotent)
 SET @zone_exists_s = (SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'stations' AND COLUMN_NAME = 'railway_zone');
-SET @alter_s = IF(@zone_exists_s = 0, 'ALTER TABLE stations ADD COLUMN railway_zone VARCHAR(10) NULL AFTER state;', 'SELECT 1;');
+SET @alter_s = IF(@zone_exists_s = 0, 'ALTER TABLE stations ADD COLUMN railway_zone VARCHAR(10) NULL;', 'SELECT 1;');
 PREPARE stmt_s FROM @alter_s;
 EXECUTE stmt_s;
 DEALLOCATE PREPARE stmt_s;
@@ -13,8 +13,6 @@ SET @alter_t = IF(@zone_exists_t = 0, 'ALTER TABLE trains ADD COLUMN railway_zon
 PREPARE stmt_t FROM @alter_t;
 EXECUTE stmt_t;
 DEALLOCATE PREPARE stmt_t;
-
-
 
 -- 2. Quotas Table (GN, TQ, LD, PT, etc.)
 CREATE TABLE IF NOT EXISTS quotas (
@@ -81,7 +79,7 @@ BEGIN
         s.station_code,
         s.station_name,
         s.city,
-        s.state,
+        COALESCE(st.state_name, 'India') AS state,
         COALESCE(s.railway_zone, 'IR') AS railway_zone,
         TIME_FORMAT(tr.arrival_time, '%H:%i') AS arrival_time,
         TIME_FORMAT(tr.departure_time, '%H:%i') AS departure_time,
@@ -92,6 +90,7 @@ BEGIN
     FROM train_routes tr
     JOIN trains t ON t.id = tr.train_id
     JOIN stations s ON s.id = tr.station_id
+    LEFT JOIN states st ON st.state_id = s.state_id
     WHERE t.train_number = p_train_no OR t.id = p_train_no
     ORDER BY tr.stop_sequence ASC;
 END$$
@@ -191,7 +190,7 @@ CREATE PROCEDURE get_available_seats(
 BEGIN
     SELECT 
         tc.class_code,
-        tc.class_name,
+        COALESCE(c.class_name, tc.class_code) AS class_name,
         tc.base_fare,
         COALESCE(a.available_seats, tc.available_seats) AS available_seats,
         COALESCE(a.rac_seats, 0) AS rac_seats,
@@ -207,6 +206,7 @@ BEGIN
         END AS formatted_status
     FROM train_classes tc
     JOIN trains t ON t.id = tc.train_id
+    LEFT JOIN classes c ON c.class_code = tc.class_code
     LEFT JOIN availability_snapshots a ON a.train_id = t.id 
         AND a.class_code = tc.class_code 
         AND a.journey_date = p_date 

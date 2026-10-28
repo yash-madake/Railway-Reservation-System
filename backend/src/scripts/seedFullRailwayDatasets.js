@@ -349,8 +349,11 @@ async function runFullIngestion() {
 
     // 3. Batch Insert / Upsert Stations
     console.log('3. Ingesting Stations into database...');
+    const [stationCols] = await connection.query('SHOW COLUMNS FROM stations;');
+    const hasStateCol = stationCols.some((c) => c.Field === 'state');
+
     const stationEntries = Array.from(stationsMap.values());
-    const BATCH_SIZE = 1000;
+    const BATCH_SIZE = 500;
 
     for (let i = 0; i < stationEntries.length; i += BATCH_SIZE) {
       const batch = stationEntries.slice(i, i + BATCH_SIZE);
@@ -358,22 +361,36 @@ async function runFullIngestion() {
       const placeholders = [];
 
       for (const s of batch) {
-        placeholders.push('(?, ?, ?, ?, ?)');
-        values.push(s.code, s.name, s.city, s.state, s.zone);
+        if (hasStateCol) {
+          placeholders.push('(?, ?, ?, ?, ?)');
+          values.push(s.code, s.name, s.city, s.state, s.zone);
+        } else {
+          placeholders.push('(?, ?, ?, ?)');
+          values.push(s.code, s.name, s.city, s.zone);
+        }
       }
 
-      await connection.query(
-        `INSERT INTO stations (station_code, station_name, city, state, railway_zone)
-         VALUES ${placeholders.join(', ')}
-         ON DUPLICATE KEY UPDATE 
-            station_name = VALUES(station_name),
-            railway_zone = CASE 
-              WHEN stations.railway_zone IS NOT NULL AND stations.railway_zone != 'IR' THEN stations.railway_zone
-              WHEN VALUES(railway_zone) IS NOT NULL THEN VALUES(railway_zone)
-              ELSE 'IR'
-            END;`,
-        values
-      );
+      const insertSql = hasStateCol
+        ? `INSERT INTO stations (station_code, station_name, city, state, railway_zone)
+           VALUES ${placeholders.join(', ')}
+           ON DUPLICATE KEY UPDATE 
+              station_name = VALUES(station_name),
+              railway_zone = CASE 
+                WHEN stations.railway_zone IS NOT NULL AND stations.railway_zone != 'IR' THEN stations.railway_zone
+                WHEN VALUES(railway_zone) IS NOT NULL THEN VALUES(railway_zone)
+                ELSE 'IR'
+              END;`
+        : `INSERT INTO stations (station_code, station_name, city, railway_zone)
+           VALUES ${placeholders.join(', ')}
+           ON DUPLICATE KEY UPDATE 
+              station_name = VALUES(station_name),
+              railway_zone = CASE 
+                WHEN stations.railway_zone IS NOT NULL AND stations.railway_zone != 'IR' THEN stations.railway_zone
+                WHEN VALUES(railway_zone) IS NOT NULL THEN VALUES(railway_zone)
+                ELSE 'IR'
+              END;`;
+
+      await connection.query(insertSql, values);
     }
     console.log(`   ✓ Ingested ${stationEntries.length} stations.`);
 
@@ -400,8 +417,8 @@ async function runFullIngestion() {
         const zone = inferTrainZone(t.number, t.originCode) || originZone || 'IR';
         const pantry = ['Rajdhani', 'Shatabdi', 'Duronto', 'Vande Bharat'].includes(t.type) ? 1 : 0;
 
-        placeholders.push('(?, ?, ?, ?, "active", ?)');
-        values.push(t.number, t.name, t.type, zone, pantry);
+        placeholders.push('(?, ?, ?, ?, ?, ?)');
+        values.push(t.number, t.name, t.type, zone, 'active', pantry);
       }
 
       await connection.query(
@@ -535,6 +552,9 @@ async function runFullIngestion() {
 
     // 6. Running Days & Classes for Trains
     console.log('6. Assigning Running Days & Classes to Trains...');
+    const [classCols] = await connection.query('SHOW COLUMNS FROM train_classes;');
+    const hasClassNameCol = classCols.some((c) => c.Field === 'class_name');
+
     const days = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
     let runningDaysPlaceholders = [];
     let runningDaysValues = [];
@@ -574,11 +594,16 @@ async function runFullIngestion() {
       }
 
       for (const tc of trainClasses) {
-        classPlaceholders.push('(?, ?, ?, ?, ?, ?)');
-        classValues.push(trainId, tc.code, tc.name, tc.fare, tc.total, tc.avail);
+        if (hasClassNameCol) {
+          classPlaceholders.push('(?, ?, ?, ?, ?, ?)');
+          classValues.push(trainId, tc.code, tc.name, tc.fare, tc.total, tc.avail);
+        } else {
+          classPlaceholders.push('(?, ?, ?, ?, ?)');
+          classValues.push(trainId, tc.code, tc.fare, tc.total, tc.avail);
+        }
       }
 
-      if (runningDaysPlaceholders.length >= 3500) {
+      if (runningDaysPlaceholders.length >= 1000) {
         await connection.query(
           `INSERT IGNORE INTO train_running_days (train_id, day_of_week) VALUES ${runningDaysPlaceholders.join(', ')};`,
           runningDaysValues
@@ -587,13 +612,16 @@ async function runFullIngestion() {
         runningDaysValues = [];
       }
 
-      if (classPlaceholders.length >= 2000) {
-        await connection.query(
-          `INSERT INTO train_classes (train_id, class_code, class_name, base_fare, total_seats, available_seats)
-           VALUES ${classPlaceholders.join(', ')}
-           ON DUPLICATE KEY UPDATE base_fare = VALUES(base_fare);`,
-          classValues
-        );
+      if (classPlaceholders.length >= 1000) {
+        const classSql = hasClassNameCol
+          ? `INSERT INTO train_classes (train_id, class_code, class_name, base_fare, total_seats, available_seats)
+             VALUES ${classPlaceholders.join(', ')}
+             ON DUPLICATE KEY UPDATE base_fare = VALUES(base_fare);`
+          : `INSERT INTO train_classes (train_id, class_code, base_fare, total_seats, available_seats)
+             VALUES ${classPlaceholders.join(', ')}
+             ON DUPLICATE KEY UPDATE base_fare = VALUES(base_fare);`;
+
+        await connection.query(classSql, classValues);
         classPlaceholders = [];
         classValues = [];
       }
@@ -606,12 +634,15 @@ async function runFullIngestion() {
       );
     }
     if (classPlaceholders.length > 0) {
-      await connection.query(
-        `INSERT INTO train_classes (train_id, class_code, class_name, base_fare, total_seats, available_seats)
-         VALUES ${classPlaceholders.join(', ')}
-         ON DUPLICATE KEY UPDATE base_fare = VALUES(base_fare);`,
-        classValues
-      );
+      const classSql = hasClassNameCol
+        ? `INSERT INTO train_classes (train_id, class_code, class_name, base_fare, total_seats, available_seats)
+           VALUES ${classPlaceholders.join(', ')}
+           ON DUPLICATE KEY UPDATE base_fare = VALUES(base_fare);`
+        : `INSERT INTO train_classes (train_id, class_code, base_fare, total_seats, available_seats)
+           VALUES ${classPlaceholders.join(', ')}
+           ON DUPLICATE KEY UPDATE base_fare = VALUES(base_fare);`;
+
+      await connection.query(classSql, classValues);
     }
     console.log('   ✓ Running days and classes configured.');
 

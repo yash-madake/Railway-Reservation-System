@@ -461,9 +461,10 @@ async function getTrainClasses(req, res) {
     const pool = require('../config/db');
 
     const [rows] = await pool.query(
-      `SELECT tc.class_code, tc.class_name, tc.base_fare, tc.total_seats, tc.available_seats
+      `SELECT tc.class_code, COALESCE(c.class_name, tc.class_code) AS class_name, tc.base_fare, tc.total_seats, tc.available_seats
          FROM train_classes tc
          JOIN trains t ON t.id = tc.train_id
+         LEFT JOIN classes c ON c.class_code = tc.class_code
         WHERE t.train_number = ? OR t.id = ?;`,
       [trainNo.trim(), trainNo.trim()]
     );
