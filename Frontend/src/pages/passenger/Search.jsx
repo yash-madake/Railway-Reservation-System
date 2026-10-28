@@ -20,6 +20,7 @@ import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { RouteConnector } from '@/components/ui/RouteConnector';
+import { API_BASE_URL } from '@/api/client';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { cn } from '@/lib/utils';
 import { useBooking } from '@/context/BookingContext';
@@ -102,7 +103,7 @@ export function Search() {
     setIsLoading(true);
     setLoadError(null);
 
-    fetch(`http://localhost:5000/api/v1/trains/between?from=${fromCode}&to=${toCode}&date=${date}`)
+    fetch(`${API_BASE_URL}/trains/between?from=${fromCode}&to=${toCode}&date=${date}`)
       .then((res) => {
         if (!res.ok) throw new Error(`Live search returned ${res.status}.`);
         return res.json();

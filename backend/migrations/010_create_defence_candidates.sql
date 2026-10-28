@@ -1,4 +1,3 @@
-USE yatrio_db_new;
 
 CREATE TABLE IF NOT EXISTS defence_candidates (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
