@@ -26,7 +26,9 @@ it, and a settled payment hands back to the booking record.
 | `RAZORPAY_KEY_SECRET` | `backend/.env` | **never** | **yes** | HMAC verification only. Never in any `VITE_` variable |
 | `CLIENT_ORIGIN` | `backend/.env` | no | no | comma-separated CORS allowlist |
 | `MAX_PAYMENT_ATTEMPTS` | `backend/.env` | no | no | default `4`, matching Razorpay's guidance |
-| `ORDER_TTL_MINUTES` | `backend/.env` | no | no | default `30`, aligned with Team 4's reservation window |
+| `ORDER_TTL_MINUTES` | `backend/.env` | no | no | default `5`, mirrored by the review step's countdown |
+| `SEAT_HOLD_TTL_MINUTES` | `backend/.env` | no | no | default: `ORDER_TTL_MINUTES`. How long a seat stays held while its booking pays. Must not be **below** the order window — §12.9 |
+| `SEAT_SWEEP_INTERVAL_MS` | `backend/.env` | no | no | default `15000`. How often dead hold rows are collected. Correctness does not depend on it |
 | `PAYMENT_LOG_FORMAT` | `backend/.env` | no | no | `pretty` (boxed) or `json` (one line per event) |
 
 > **The one rule that matters:** only `VITE_RAZORPAY_KEY_ID` may appear in
@@ -219,6 +221,7 @@ Server-side HMAC verification, then confirmation against Razorpay. Idempotent.
 | `409` | `SIGNATURE_MISMATCH` | **tampered/forged signature — reject, never fulfil** |
 | `409` | `ORDER_MISMATCH` | payment id belongs to a different order |
 | `409` | `ORDER_EXPIRED` | past `ORDER_TTL_MINUTES` |
+| `409` | `HOLDS_EXPIRED` | payment captured, but the seat hold lapsed first — **no ticket is issued**, refund the payment (§12.9) |
 | `409` | `REFUNDED` | already refunded |
 | `502` | `GATEWAY_ERROR` | Razorpay unreachable |
 
@@ -254,6 +257,48 @@ Omit `amount` for a full refund.
 { "items": [ /* payment records, newest first */ ],
   "total": 3, "page": 1, "pageSize": 10, "totalPages": 1 }
 ```
+
+### `POST /bookings/confirm`
+
+Team 4's stand-in, and the only endpoint that creates a seat hold. Everything
+about it is in §12.9; the shape is:
+
+```jsonc
+// request
+{ "train":  { "number": "12951", "class": "3A" },
+  "route":  { "from": "NDLS", "to": "MMCT" },
+  "passengers": [ { "name": "Arjun Mehta", "age": 34, "gender": "male" } ],
+  "contact": { "email": "…" },
+  "departureDate": "2026-10-15",              // part of a seat's identity
+  "seats": [ { "coach": "B1", "number": "24", "type": "Lower" } ] }
+
+// 201
+{ "bookingRef": "YTR-12951-48EF",
+  "train": { "number": "12951", "class": "3A", "coach": "B1", "seat": "24" },
+  "seats": [ { "coach": "B1", "seatNumber": "24", "berthType": "Lower", "status": "held" } ],
+  "holdExpiresAt": "2026-10-17T12:06:54.380Z", // MySQL's clock — count down to this
+  "fare": { "amount": 61860, "currency": "INR", "breakdown": [ … ] } }
+```
+
+`409 SEATS_UNAVAILABLE` names the seats that were taken. `400 BAD_REQUEST` for a
+duplicate seat in the request, a malformed `departureDate`, or more than six
+seats.
+
+### `GET /seats/availability`
+
+`?trainNo=12951&class=3A&date=2026-10-15`
+
+```json
+{ "seats": [ { "coach": "B1", "seatNumber": "24", "berthType": "Lower",
+               "status": "held", "expiresAt": "2026-10-17T12:06:54.380Z" } ],
+  "summary": { "held": 1, "confirmed": 0, "nextReleaseAt": "2026-10-17T12:06:54.380Z" },
+  "holdTtlMinutes": 5 }
+```
+
+Read-only. Claims nothing — a seat the traveller is only *looking* at must not
+be taken off sale. `status` is `held` (someone is paying for it, frees at
+`expiresAt`) or `confirmed` (sold). A lapsed hold is absent from `seats`
+entirely, whether or not the sweeper has run.
 
 ### Error envelope
 
@@ -491,10 +536,9 @@ refunded ───────────────────────�
 
 - **Booking state changes only through a service boundary.** Team 5 never writes
   a booking table; it returns a result and Team 4 acts on it.
-- **Reservation timeout must exceed `ORDER_TTL_MINUTES`.** A seat held for
-  15 minutes while payment windows last 30 would let a booking expire after the
-  traveller paid. Default is 30 minutes; Team 4 should hold seats for at least
-  that long.
+- **Reservation timeout must exceed `ORDER_TTL_MINUTES`.** A seat held for less
+  than the payment window would let a booking expire after the traveller paid.
+  Default is 5 minutes; Team 4 should hold seats for longer than that.
 - **A captured payment is final.** Team 4 must not treat a booking as unpaid
   because a webhook has not arrived.
 - **Refunds release the seat.** Team 4 handles the refund event.
@@ -788,3 +832,89 @@ ALTER TABLE `payments`
 `ON DELETE SET NULL`, not CASCADE: deleting a booking must not delete the
 record that money moved against it. `booking_ref` is stored alongside
 `booking_id` so history still renders if the row is ever gone.
+### 12.9 Seat inventory, segment booking and the bitmask
+
+A berth is not booked for a whole journey. It is booked for a **run of adjacent
+segments**, and it can be sold again from the next station along. The 12002 has
+four segments; a berth sold NDLS→JHS occupies three of them and stays empty for
+exactly those three, so a traveller boarding at JHS may take the same berth.
+
+Occupancy is therefore a bitmask, one bit per segment:
+
+```
+bit 0        bit 1        bit 2        bit 3
+NDLS-AGC     AGC-GWL      GWL-JHS      JHS-BPL
+```
+
+```
+Rahul  NDLS->JHS  stops 1-4  mask 0111 = 7
+Priya  AGC->BPL   stops 2-5  mask 1110 = 14    7 & 14 = 0110  conflict
+Same berth, JHS->BPL  stops 4-5  mask 1000 = 8   7 & 8 = 0000  free
+```
+
+`BIGINT UNSIGNED` is 64 bits. The longest route in the schema is nine stops, so
+there are fifty-six spare bits and a `CHECK` constraint enforces the ceiling
+rather than trusting callers.
+
+#### Four tables
+
+| Table | Grain | Notes |
+| --- | --- | --- |
+| `coaches` | one carriage per (train, class) | composite FK to `train_classes (train_id, class_code)` |
+| `coach_seats` | one berth per coach | the thing a hold points at |
+| `seat_inventory` | one row per **seat per journey date** | holds `segment_mask`; **this is the lock** |
+| `seat_holds` | one row per booking per seat | `from_stop_seq`, `to_stop_seq`, `segment_mask` |
+
+#### The claim is a compare-and-swap, not a lock table
+
+```sql
+UPDATE seat_inventory
+   SET segment_mask = segment_mask | :mask
+ WHERE seat_id = ? AND departure_date = ?
+   AND (segment_mask & :mask) = 0     -- affectedRows 1 = won, 0 = lost
+```
+
+MySQL evaluates that predicate under the row lock, so there is no read-then-write
+window and no dependency on the application being the only writer — which
+matters, because the payment store and the booking registry are both
+process-local.
+
+This **replaces** the `UNIQUE (train, class, date, coach, seat)` index the
+first version of this table used. That index cannot work here: a seat
+legitimately has several concurrent rows whenever their segments are disjoint.
+
+#### Release clears only its own bits
+
+`segment_mask & ~(:mask)`. Safe against neighbours — if A holds `0111` and B
+holds `1000`, A expiring leaves B untouched. Nor can a lapsed hold clear a bit
+since re-claimed, because its bits were held continuously for its whole life.
+
+> The inner parentheses are load-bearing. Sequelize's replacement scanner only
+> recognises `:name` directly after `(`, a word boundary or a comma; written as
+> `~:mask` the placeholder reaches MySQL unsubstituted.
+
+#### Expiry does not depend on the sweeper
+
+`holdSeats` retires lapsed holds on the journey *before* claiming, so a berth is
+free the moment its window closes. `holdSweeper.js` only collects dead rows.
+Disabling it costs untidy rows, never correctness.
+
+#### Pro-rata pricing
+
+`rate_per_km = base_fare / full_route_km`, then `fare = round(segment_km x rate)`.
+A whole-route booking costs exactly the advertised `base_fare`; a sub-route is a
+pro-rata share. The rate must be per *(train, class)* — implied per-km rates
+across the seeded data span Rs 0.24 (2S on the 11077) to Rs 3.50 (1A on the
+12951).
+
+Known limitation, documented rather than hidden: **no minimum fare**, so a 48 km
+hop prices at about Rs 70 in 2S. Real railways floor this; `fares` is Team 3's
+table and does not exist yet.
+
+#### Availability is derived, not stored
+
+`train_classes.available_seats` is a static seed number that never tracked a
+booking. Availability is now counted from the masks, and `takenSeats` counts
+*berths* rather than bookings — one physical seat sold to three passengers over
+three legs is one taken berth.
+

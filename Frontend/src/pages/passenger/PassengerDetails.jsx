@@ -5,26 +5,47 @@ import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { RouteConnector } from '@/components/ui/RouteConnector';
 import { useBooking } from '@/context/BookingContext';
+const emptyPassenger = (id) => ({
+    id,
+    name: '',
+    age: '',
+    gender: 'Male',
+    berthPreference: 'No Preference',
+});
+
+let passengerSeq = 0;
+const nextPassengerId = () => {
+    passengerSeq += 1;
+    return `p_${Date.now().toString(36)}_${passengerSeq}`;
+};
+
 export function PassengerDetails() {
     const navigate = useNavigate();
-    const { selectedTrain, selectedClass, passengers, addPassenger, removePassenger, updatePassenger, calculateFare } = useBooking();
-    const [localPassengers, setLocalPassengers] = useState(passengers && passengers.length > 0
-        ? passengers
-        : [{ id: '1', name: 'Rahul Sharma', age: '32', gender: 'Male', berthPreference: 'Lower' }]);
-    const [contact, setContact] = useState({
-        email: 'rahul.sharma@example.com',
-        phone: '9876543210',
-    });
+    const { selectedTrain, selectedClass, passengers, replacePassengers, setContact, contact: draftContact } = useBooking();
+
+    /**
+     * Seeded with one *blank* passenger, never a filled-in example.
+     *
+     * This used to start the form holding a made-up "Rahul Sharma", and the
+     * contact block held a made-up email and phone. A traveller who skimmed the
+     * form and pressed next booked a fictional person — and because the name was
+     * pre-filled, the field looked validated rather than empty. The example now
+     * lives in `placeholder`, which is suggestion text and is never submitted.
+     */
+    const [localPassengers, setLocalPassengers] = useState(
+        passengers && passengers.length > 0 ? passengers : [emptyPassenger(nextPassengerId())]
+    );
+    /**
+     * Seeded from the draft so a back-navigation does not wipe it, but never with
+     * a made-up address — a booking addressed to `rahul.sharma@example.com` is
+     * worse than one with no contact at all.
+     */
+    const [contact, setLocalContact] = useState(draftContact ?? { email: '', phone: '' });
+    const updateContact = (field, value) => setLocalContact({ ...contact, [field]: value });
+
     const handleAdd = () => {
         if (localPassengers.length < 6) {
-            const newP = {
-                id: Date.now().toString(),
-                name: '',
-                age: '',
-                gender: 'Male',
-                berthPreference: 'No Preference',
-            };
-            setLocalPassengers([...localPassengers, newP]);
+            setLocalPassengers([...localPassengers, emptyPassenger(nextPassengerId())]);
         }
     };
     const handleRemove = (id) => {
@@ -37,25 +58,56 @@ export function PassengerDetails() {
     };
     const handleSubmit = (e) => {
         e.preventDefault();
-        localPassengers.forEach((p) => {
-            const existing = passengers.find((ep) => ep.id === p.id);
-            if (!existing)
-                addPassenger(p);
-            else
-                updatePassenger(p.id, p);
-        });
-        calculateFare();
+
+        // Drop rows the traveller blanked out but never deleted. `required`
+        // already refuses an empty submit, so reaching here means every row has
+        // a name — but guarding is cheap and this list is sent to the server.
+        const filled = localPassengers.filter((p) => String(p.name ?? '').trim() !== '');
+        if (filled.length === 0) return;
+
+        // Replace, rather than add-and-update. Adding cannot express "one fewer
+        // than before", so a passenger removed on this screen stayed in the
+        // booking and the seat map went on offering a berth for them.
+        replacePassengers(filled.map((p) => ({ ...p, name: String(p.name).trim() })));
+
+        // Persisted here so the ticket is actually addressed. Previously this was
+        // local state, thrown away on navigation.
+        setContact({ email: contact.email.trim(), phone: contact.phone.trim() });
+
+
         navigate('/booking/seat-selection');
     };
-    const trainName = selectedTrain?.name || 'Mumbai Rajdhani';
-    const trainNo = selectedTrain?.number || '12951';
-    const travelClass = selectedClass || '3A';
-    const baseRate = travelClass === '1A' ? 2850 : travelClass === '2A' ? 1850 : travelClass === '3A' ? 1250 : 480;
-    const estimatedTotal = localPassengers.length * baseRate;
+    /**
+     * Whatever the search step actually chose, and nothing invented if it chose
+     * nothing.
+     *
+     * These fell back to a literal 12951 "Mumbai Rajdhani" in 3A, so opening this
+     * page without a search result showed a plausible-looking train rather than
+     * admitting the selection was missing.
+     */
+    const trainName = selectedTrain?.name ?? null;
+    const trainNo = selectedTrain?.number ?? null;
+    const travelClass = selectedClass ?? selectedTrain?.class ?? null;
+    const fromCode = selectedTrain?.source?.code ?? selectedTrain?.source ?? null;
+    const toCode = selectedTrain?.destination?.code ?? selectedTrain?.destination ?? null;
+    const fromName = selectedTrain?.source?.name ?? fromCode;
+    const toName = selectedTrain?.destination?.name ?? toCode;
+
+    /*
+     * No fare is quoted on this step.
+     *
+     * This page used to price the journey in the browser from a hardcoded rate
+     * card (1A 2850 / 2A 1850 / 3A 1250 / SL 480) plus a flat Rs 70 per
+     * traveller and 5% GST. Those figures matched nothing in
+     * `train_classes.base_fare`, and the tax model differed from the server's.
+     * The server prices the journey from the price list, pro-rates it by
+     * distance, and applies tax once plus a flat per-booking fee, so any
+     * estimate shown here was a number the traveller would be charged against.
+     */
     return (<div className="mx-auto w-full max-w-content px-4 sm:px-6 lg:px-8 py-8 space-y-8">
-      {/* 4-Step Stepper Header */}
+      {/* 3-Step Stepper Header */}
       <div className="rounded-card border border-line-mid bg-white p-4 shadow-card">
-        <div className="grid grid-cols-4 text-center">
+        <div className="grid grid-cols-3 text-center">
           <div className="flex flex-col items-center gap-1.5 border-b-2 border-azure pb-2">
             <span className="num size-7 rounded-full bg-azure text-white text-xs font-bold flex items-center justify-center">1</span>
             <span className="text-caption font-semibold text-ink">Passengers</span>
@@ -66,11 +118,7 @@ export function PassengerDetails() {
           </div>
           <div className="flex flex-col items-center gap-1.5 border-b-2 border-transparent pb-2 text-ink-soft">
             <span className="num size-7 rounded-full bg-fog text-ink-soft text-xs font-bold flex items-center justify-center">3</span>
-            <span className="text-caption font-medium">Review</span>
-          </div>
-          <div className="flex flex-col items-center gap-1.5 border-b-2 border-transparent pb-2 text-ink-soft">
-            <span className="num size-7 rounded-full bg-fog text-ink-soft text-xs font-bold flex items-center justify-center">4</span>
-            <span className="text-caption font-medium">Payment</span>
+            <span className="text-caption font-medium">Review &amp; Pay</span>
           </div>
         </div>
       </div>
@@ -80,7 +128,7 @@ export function PassengerDetails() {
         <form id="passenger-form" onSubmit={handleSubmit} className="space-y-6">
           <div>
             <span className="text-eyebrow font-semibold uppercase tracking-[0.16em] text-ink-soft">
-              Step 1 of 4
+              Step 1 of 3
             </span>
             <h1 className="text-h2 font-bold tracking-tight text-ink mt-0.5">
               Passenger Information
@@ -169,7 +217,7 @@ export function PassengerDetails() {
                   <span className="h-11 px-3.5 bg-surface-sunken border border-r-0 border-line-strong rounded-l-control text-sm font-semibold text-ink flex items-center">
                     +91
                   </span>
-                  <input type="tel" pattern="[0-9]{10}" value={contact.phone} onChange={(e) => setContact({ ...contact, phone: e.target.value })} required className="num h-11 w-full rounded-r-control border border-line-strong bg-white px-3.5 text-sm font-medium text-ink focus:border-royal focus:ring-4 focus:ring-royal/15"/>
+                  <input type="tel" pattern="[0-9]{10}" value={contact.phone} onChange={(e) => updateContact('phone', e.target.value)} required className="num h-11 w-full rounded-r-control border border-line-strong bg-white px-3.5 text-sm font-medium text-ink focus:border-royal focus:ring-4 focus:ring-royal/15"/>
                 </div>
               </div>
 
@@ -177,7 +225,7 @@ export function PassengerDetails() {
                 <label className="block text-eyebrow font-semibold uppercase tracking-[0.16em] text-ink-soft">
                   Email Address *
                 </label>
-                <input type="email" value={contact.email} onChange={(e) => setContact({ ...contact, email: e.target.value })} required className="h-11 w-full rounded-control border border-line-strong bg-white px-3.5 text-sm font-medium text-ink focus:border-royal focus:ring-4 focus:ring-royal/15"/>
+                <input type="email" value={contact.email} onChange={(e) => updateContact('email', e.target.value)} required className="h-11 w-full rounded-control border border-line-strong bg-white px-3.5 text-sm font-medium text-ink focus:border-royal focus:ring-4 focus:ring-royal/15"/>
               </div>
             </div>
           </Card>
@@ -198,29 +246,12 @@ export function PassengerDetails() {
               </span>
             </div>
 
-            <RouteConnector fromCode="NDLS" toCode="MMCT" fromName="New Delhi" toName="Mumbai Central" depTime="16:55" arrTime="08:35" duration="15h 40m" size="sm"/>
+            {/* The route that was searched, not a fixed NDLS to MMCT. */}
+            <RouteConnector fromCode={fromCode} toCode={toCode} fromName={fromName} toName={toName} size="sm"/>
 
-            {/* Fare Breakdown */}
-            <div className="border-t border-line pt-4 space-y-2 text-sm">
-              <div className="flex justify-between text-ink-soft">
-                <span>Base Fare ({localPassengers.length} traveller{localPassengers.length > 1 ? 's' : ''})</span>
-                <span className="num font-semibold text-ink">₹{estimatedTotal}</span>
-              </div>
-              <div className="flex justify-between text-ink-soft">
-                <span>Reservation & Superfast</span>
-                <span className="num font-semibold text-ink">₹{localPassengers.length * 70}</span>
-              </div>
-              <div className="flex justify-between text-ink-soft">
-                <span>GST (5%)</span>
-                <span className="num font-semibold text-ink">₹{Math.round(estimatedTotal * 0.05)}</span>
-              </div>
-
-              <div className="border-t border-line-mid pt-3 flex justify-between items-baseline">
-                <span className="text-body font-bold text-ink">Estimated Total</span>
-                <span className="num text-h3 font-bold text-royal">
-                  ₹{Math.round(estimatedTotal * 1.05 + localPassengers.length * 70)}
-                </span>
-              </div>
+            <div className="border-t border-line pt-4 text-sm text-ink-soft">
+              The fare is calculated on the server once the journey and berths are set, and shown
+              on the review step before anything is charged.
             </div>
 
             <Button form="passenger-form" type="submit" size="lg" className="w-full">

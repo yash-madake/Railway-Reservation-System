@@ -40,6 +40,12 @@ async function runTests() {
   let passed = 0;
   let failed = 0;
 
+  // A date a week out, computed rather than written down. The endpoint refuses
+  // past journey dates (PAST_DATE), so a hardcoded literal rots: the day after
+  // it passes, every one of these searches fails validation and the assertion
+  // that trips is the station pair, not the date.
+  const FUTURE_DATE = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+
   function assert(condition, message) {
     if (condition) {
       console.log(`  ✓ PASS: ${message}`);
@@ -96,7 +102,7 @@ async function runTests() {
 
     // Test 5: Valid search between PUNE and CSMT
     {
-      const res = await request('/trains/between?from=PUNE&to=CSMT&date=2026-10-15');
+      const res = await request(`/trains/between?from=PUNE&to=CSMT&date=${FUTURE_DATE}`);
       assert(res.status === 200, 'GET /trains/between returns 200 for valid route');
       assert(res.body.success === true, 'Response contains success: true');
       assert(res.body.data.total >= 2, 'Found at least 2 trains between PUNE and CSMT');
@@ -120,7 +126,7 @@ async function runTests() {
 
     // Test 6: Same source and destination
     {
-      const res = await request('/trains/between?from=PUNE&to=PUNE&date=2026-10-15');
+      const res = await request(`/trains/between?from=PUNE&to=PUNE&date=${FUTURE_DATE}`);
       assert(res.status === 400, 'Same station returns 400');
       assert(
         res.body.error?.code === 'SAME_STATION',
@@ -130,7 +136,7 @@ async function runTests() {
 
     // Test 7: Non-existent station in DB
     {
-      const res = await request('/trains/between?from=XXXX&to=CSMT&date=2026-10-15');
+      const res = await request(`/trains/between?from=XXXX&to=CSMT&date=${FUTURE_DATE}`);
       assert(res.status === 400, 'Non-existent station returns 400');
       assert(
         res.body.error?.code === 'STATION_NOT_FOUND',
@@ -140,7 +146,7 @@ async function runTests() {
 
     // Test 7b: Invalid station code format
     {
-      const res = await request('/trains/between?from=TOOLONGCODE&to=CSMT&date=2026-10-15');
+      const res = await request(`/trains/between?from=TOOLONGCODE&to=CSMT&date=${FUTURE_DATE}`);
       assert(res.status === 400, 'Invalid format station returns 400');
       assert(
         res.body.error?.code === 'INVALID_STATION_CODE',
@@ -206,6 +212,14 @@ async function runTests() {
     console.log('====================================================\n');
   } finally {
     server.close();
+    // The Sequelize pool and Redis's reconnect timer both hold the event loop
+    // open after the last assertion, so a green run would hang here forever
+    // instead of exiting. Close them and let the process finish.
+    const { close } = require('../src/config/database');
+    const { redis } = require('../src/config/redis');
+    await close().catch(() => {});
+    await redis.quit().catch(() => {});
+    redis.disconnect();
   }
 
   if (failed > 0) {

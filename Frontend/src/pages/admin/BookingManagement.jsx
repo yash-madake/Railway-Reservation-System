@@ -1,143 +1,178 @@
-import React, { useState } from 'react';
-import { Search, Filter } from 'lucide-react';
-import { Card, CardContent } from '@/components/ui/Card';
-import { Button } from '@/components/ui/Button';
-import { Input } from '@/components/ui/Input';
+import React, { useCallback, useEffect, useState } from 'react';
+import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/Tabs';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/Table';
-import { Modal } from '@/components/ui/Modal';
-import { Pagination } from '@/components/ui/Pagination';
-const BookingManagement = () => {
-    const [searchTerm, setSearchTerm] = useState('');
-    const [activeTab, setActiveTab] = useState('all');
-    const [modalOpen, setModalOpen] = useState(false);
-    const [selectedBooking, setSelectedBooking] = useState(null);
-    // Mock data
-    const bookings = [
-        { pnr: '2435678901', passenger: 'Rahul Sharma + 2', train: '12951', date: '2026-10-15', route: 'NDLS → MMCT', class: '3A', fare: 4500, status: 'CONFIRMED' },
-        { pnr: '2435678902', passenger: 'Priya Patel', train: '12009', date: '2026-10-16', route: 'BCT → ADI', class: 'CC', fare: 850, status: 'WAITLISTED' },
-        { pnr: '2435678903', passenger: 'Amit Kumar', train: '12229', date: '2026-10-15', route: 'LJN → NDLS', class: '2A', fare: 1200, status: 'CONFIRMED' },
-        { pnr: '2435678904', passenger: 'Sneha Gupta', train: '12627', date: '2026-10-17', route: 'SBC → NDLS', class: '1A', fare: 6500, status: 'CANCELLED' },
-        { pnr: '2435678905', passenger: 'Vikram Singh + 1', train: '12925', date: '2026-10-18', route: 'BDTS → ASR', class: 'SL', fare: 1300, status: 'RAC' },
-    ];
-    const handleView = (booking) => {
-        setSelectedBooking(booking);
-        setModalOpen(true);
-    };
-    const getStatusVariant = (status) => {
-        switch (status) {
-            case 'CONFIRMED': return 'success';
-            case 'CANCELLED': return 'error';
-            case 'WAITLISTED': return 'warning';
-            case 'RAC': return 'secondary';
-            default: return 'default';
-        }
-    };
-    const filteredBookings = activeTab === 'all'
-        ? bookings
-        : bookings.filter(b => b.status.toLowerCase() === activeTab.toLowerCase());
-    return (<div className="p-6 max-w-7xl mx-auto space-y-6">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <h1 className="text-2xl font-bold text-foreground">Booking Management</h1>
-        <Button variant="outline"><Filter className="mr-2 h-4 w-4"/> Advanced Filter</Button>
-      </div>
+import { Button } from '@/components/ui/Button';
+import { Skeleton } from '@/components/ui/Skeleton';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { adminService } from '@/services/adminService';
+import { Search, RefreshCw } from 'lucide-react';
 
-      <Card>
-        <CardContent className="p-4 sm:p-6 space-y-4">
-          <div className="relative w-full max-w-md">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted"/>
-            <Input placeholder="Search by PNR, Passenger Name or Train Number..." className="pl-9" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)}/>
-          </div>
-
-          <Tabs value={activeTab} onValueChange={setActiveTab}>
-            <TabsList>
-              <TabsTrigger value="all">All Bookings</TabsTrigger>
-              <TabsTrigger value="confirmed">Confirmed</TabsTrigger>
-              <TabsTrigger value="rac">RAC</TabsTrigger>
-              <TabsTrigger value="waitlisted">Waiting</TabsTrigger>
-              <TabsTrigger value="cancelled">Cancelled</TabsTrigger>
-            </TabsList>
-          </Tabs>
-
-          <div className="border rounded-md overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>PNR</TableHead>
-                  <TableHead>Passenger</TableHead>
-                  <TableHead>Train</TableHead>
-                  <TableHead>Journey Date</TableHead>
-                  <TableHead>Route</TableHead>
-                  <TableHead>Class</TableHead>
-                  <TableHead className="text-right">Fare</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredBookings.map((booking) => (<TableRow key={booking.pnr}>
-                    <TableCell className="font-semibold">{booking.pnr}</TableCell>
-                    <TableCell>{booking.passenger}</TableCell>
-                    <TableCell>{booking.train}</TableCell>
-                    <TableCell>{booking.date}</TableCell>
-                    <TableCell>{booking.route}</TableCell>
-                    <TableCell>{booking.class}</TableCell>
-                    <TableCell className="text-right">₹{booking.fare}</TableCell>
-                    <TableCell>
-                      <Badge variant={getStatusVariant(booking.status)}>
-                        {booking.status}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <Button variant="ghost" size="sm" onClick={() => handleView(booking)}>
-                        View
-                      </Button>
-                    </TableCell>
-                  </TableRow>))}
-              </TableBody>
-            </Table>
-          </div>
-
-          <div className="mt-4 flex justify-end">
-            <Pagination currentPage={1} totalPages={10} onPageChange={() => { }}/>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title="Booking Details" className="max-w-3xl">
-        {selectedBooking && (<div className="space-y-6">
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 bg-gray-50 rounded-lg">
-              <div>
-                <p className="text-sm text-muted">PNR</p>
-                <p className="font-bold">{selectedBooking.pnr}</p>
-              </div>
-              <div>
-                <p className="text-sm text-muted">Train</p>
-                <p className="font-bold">{selectedBooking.train}</p>
-              </div>
-              <div>
-                <p className="text-sm text-muted">Date</p>
-                <p className="font-bold">{selectedBooking.date}</p>
-              </div>
-              <div>
-                <p className="text-sm text-muted">Status</p>
-                <Badge variant={getStatusVariant(selectedBooking.status)}>{selectedBooking.status}</Badge>
-              </div>
-            </div>
-
-            <div className="space-y-4">
-              <h3 className="font-bold">Passenger Details</h3>
-              <div className="border rounded-md p-4">
-                <p>{selectedBooking.passenger}</p>
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-3 border-t pt-4">
-              <Button variant="outline" onClick={() => setModalOpen(false)}>Close</Button>
-            </div>
-          </div>)}
-      </Modal>
-    </div>);
+const STATUS_BADGE = {
+    HELD: 'outline',
+    CONFIRMED: 'success',
+    CANCELLED: 'error',
+    EXPIRED: 'error',
 };
-export default BookingManagement;
+
+const rupees = (paise) => (paise == null ? null : (Number(paise) / 100).toFixed(2));
+
+const formatDateTime = (value) => {
+    if (!value) return null;
+    const d = new Date(value);
+    return Number.isNaN(d.getTime())
+        ? null
+        : d.toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+};
+
+export default function BookingManagement() {
+    const [rows, setRows] = useState([]);
+    const [total, setTotal] = useState(0);
+    const [page, setPage] = useState(1);
+    const [pageSize] = useState(20);
+    const [status, setStatus] = useState('');
+    const [query, setQuery] = useState('');
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
+
+    const load = useCallback(async () => {
+        setLoading(true);
+        setError(null);
+        try {
+            const params = { page, pageSize };
+            if (status) params.status = status;
+            if (query.trim()) params.q = query.trim();
+            const res = await adminService.getBookings(params);
+            setRows(res?.data ?? []);
+            setTotal(res?.total ?? 0);
+        } catch (err) {
+            setRows([]);
+            setError(err?.message ?? 'Failed to load bookings.');
+        } finally {
+            setLoading(false);
+        }
+    }, [page, pageSize, status, query]);
+
+    useEffect(() => {
+        load().catch(() => {});
+    }, [load]);
+
+    const totalPages = Math.max(1, Math.ceil(total / pageSize));
+
+    return (
+        <div className="space-y-6">
+            <div>
+                <h1 className="text-h2 font-bold tracking-tight text-ink">Bookings</h1>
+                <p className="text-body text-ink-soft">Passenger reservations and PNR lifecycles.</p>
+            </div>
+
+            <Card className="p-4 flex flex-wrap items-end gap-3">
+                <div className="flex-1 min-w-[200px]">
+                    <label className="block text-eyebrow font-semibold uppercase tracking-[0.16em] text-ink-soft mb-1">
+                        Search
+                    </label>
+                    <div className="relative">
+                        <Search className="size-4 absolute left-3 top-1/2 -translate-y-1/2 text-ink-muted" />
+                        <input
+                            value={query}
+                            onChange={(e) => { setQuery(e.target.value); setPage(1); }}
+                            placeholder="Reference, train number or email"
+                            className="h-11 w-full rounded-control border border-line-strong bg-white pl-9 pr-3 text-sm text-ink"
+                        />
+                    </div>
+                </div>
+                <div className="w-40">
+                    <label className="block text-eyebrow font-semibold uppercase tracking-[0.16em] text-ink-soft mb-1">
+                        Status
+                    </label>
+                    <select
+                        value={status}
+                        onChange={(e) => { setStatus(e.target.value); setPage(1); }}
+                        className="h-11 w-full rounded-control border border-line-strong bg-white px-3 text-sm text-ink"
+                    >
+                        {/* Derived from the booking enum, so a new status cannot
+                            go missing from the filter. */}
+                        <option value="">All</option>
+                        {Object.keys(STATUS_BADGE).map(s => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                </div>
+                <Button variant="outline" onClick={load} disabled={loading} className="gap-1.5">
+                    <RefreshCw className={`size-4 ${loading ? 'animate-spin' : ''}`} /> Refresh
+                </Button>
+            </Card>
+
+            <Card className="p-0 overflow-hidden">
+                {loading ? (
+                    <div className="p-6 space-y-4">
+                        {[1, 2, 3].map(i => <Skeleton key={i} className="h-16 w-full rounded-control" />)}
+                    </div>
+                ) : error ? (
+                    <EmptyState
+                        title="Could not load bookings"
+                        description={error}
+                        action={<Button onClick={load}>Try again</Button>}
+                    />
+                ) : rows.length === 0 ? (
+                    <EmptyState
+                        title="No bookings found"
+                        description={total === 0 ? 'No bookings have been created yet.' : 'No bookings match these filters.'}
+                        action={<Button variant="secondary" onClick={() => { setStatus(''); setQuery(''); setPage(1); }}>Clear filters</Button>}
+                    />
+                ) : (
+                    <>
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-left border-collapse">
+                                <thead>
+                                    <tr className="border-b border-line bg-surface-sunken text-eyebrow text-ink-soft font-semibold uppercase tracking-[0.16em]">
+                                        <th className="py-3 px-4">Reference</th>
+                                        <th className="py-3 px-4">Train</th>
+                                        <th className="py-3 px-4">Route</th>
+                                        <th className="py-3 px-4">Pax</th>
+                                        <th className="py-3 px-4">Fare</th>
+                                        <th className="py-3 px-4">Booked</th>
+                                        <th className="py-3 px-4">Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-line text-sm">
+                                    {rows.map(b => (
+                                        <tr key={b.booking_id ?? b.booking_ref} className="hover:bg-surface-sunken/50">
+                                            <td className="py-3 px-4 num font-mono font-bold text-ink">{b.booking_ref}</td>
+                                            <td className="py-3 px-4">
+                                                <div className="font-semibold text-ink">{b.train_no}</div>
+                                                <div className="text-caption text-ink-soft">{b.train_name} · {b.travel_class}</div>
+                                            </td>
+                                            <td className="py-3 px-4 text-ink-soft">
+                                                {b.origin_code} → {b.destination_code}
+                                            </td>
+                                            <td className="py-3 px-4 num text-ink">{b.passenger_count}</td>
+                                            <td className="py-3 px-4 num font-semibold text-royal">
+                                                {rupees(b.total_amount) != null ? `₹${rupees(b.total_amount)}` : '—'}
+                                            </td>
+                                            <td className="py-3 px-4 text-caption text-ink-soft">{formatDateTime(b.created_at) ?? '—'}</td>
+                                            <td className="py-3 px-4">
+                                                <Badge variant={STATUS_BADGE[b.status] ?? 'outline'}>{b.status}</Badge>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <div className="flex items-center justify-between gap-3 px-4 py-3 border-t border-line">
+                            <span className="text-caption text-ink-soft">
+                                Page {page} of {totalPages} · {total} booking{total === 1 ? '' : 's'}
+                            </span>
+                            <div className="flex gap-2">
+                                <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>
+                                    Previous
+                                </Button>
+                                <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}>
+                                    Next
+                                </Button>
+                            </div>
+                        </div>
+                    </>
+                )}
+            </Card>
+        </div>
+    );
+}

@@ -19,8 +19,11 @@
 
 const store = require('../services/payment/paymentStore')
 const razorpay = require('../services/payment/razorpayService')
-const { resolveBooking } = require('../services/payment/bookingService')
-const { calculateFare, assertNoClientAmount } = require('../services/payment/fareService')
+const bookingStore = require('../services/booking/bookingService')
+const audit = require('../services/auditService')
+const ticketService = require('../services/ticketService')
+const { confirmHolds } = require('../services/seat/holdService')
+const { fareForBooking, assertNoClientAmount } = require('../services/payment/fareService')
 const { verifyPaymentSignature } = require('../utils/signature')
 const env = require('../config/env')
 const { badRequest, notFound, conflict, upstream } = require('../utils/errors')
@@ -40,6 +43,11 @@ const serialise = (r) => ({
   refundId: r.refundId,
   refundedAmount: r.refundedAmount,
   passengerName: r.passengerName,
+  // Echoed back so Checkout can prefill the traveller's contact details, which
+  // Razorpay rates as the single biggest conversion lever. These are the
+  // lead passenger's own details from the booking record, not user input.
+  passengerEmail: r.passengerEmail,
+  passengerContact: r.passengerContact,
   trainNo: r.trainNo,
   trainName: r.trainName,
   fromStation: r.fromStation,
@@ -63,8 +71,11 @@ async function createOrder(req, res) {
 
   if (!bookingRef) throw badRequest('bookingRef is required.', 'bookingRef')
 
-  const booking = resolveBooking(bookingRef)
-  const fare = calculateFare(booking, extras ?? {})
+  const booking = await bookingStore.resolveBooking(bookingRef)
+  // The snapshot taken when the booking was confirmed, so the amount charged is
+  // the amount the traveller was shown. Only a booking that predates the
+  // snapshot — the seeded demo references — gets priced here.
+  const fare = await fareForBooking(booking, extras ?? {})
 
   // Reuse an order that is still live and not expired.
   const previous = store.latestForBooking(bookingRef)
@@ -123,6 +134,14 @@ async function createOrder(req, res) {
     trainName: booking.train.name,
     fromStation: booking.route.from,
     toStation: booking.route.to,
+  })
+
+  await audit.record({
+    action: audit.ACTIONS.ORDER_CREATED,
+    entity: audit.ENTITIES.PAYMENT,
+    entityId: record.gatewayOrderId ?? record.orderId,
+    actorId: audit.actorOf(req),
+    details: { bookingRef: record.bookingRef, amount: fare.amount, currency: fare.currency },
   })
 
   // The public key id travels with the response so the client can open
@@ -203,6 +222,83 @@ async function verifyPayment(req, res) {
   const status =
     payment.status === 'captured' ? 'captured' : payment.status === 'failed' ? 'failed' : payment.status
 
+  /**
+   * The money has moved, so the seats have to become permanent — in one
+   * transaction, and only if they are still ours.
+   *
+   * Deliberately placed here and not inside `store.update`: confirmHolds locks
+   * its rows with FOR UPDATE and may refuse, and a refusal after the payment has
+   * been recorded would leave a captured payment attached to a booking whose
+   * berth somebody else is about to buy. `confirmHolds` runs first, so the worst
+   * outcome is a 409 the traveller never sees because Razorpay already has their
+   * money — which is exactly the case PAYMENTS.md's webhook gap warns about.
+   *
+   * No transaction is held open across the Razorpay call above; that finished
+   * before this point on purpose.
+   */
+  // Set only when THIS call turns a HELD booking into a ticket, so the e-ticket
+  // email goes out exactly once. A repeat callback returns early above, and a
+  // booking that was already CONFIRMED never sets it.
+  let ticketIssued = false
+
+  if (status === 'captured') {
+    /**
+     * A row in `bookings` was only ever written after its berths were claimed,
+     * so a booking still in HELD or CONFIRMED must still be holding them.
+     * Anything terminal has already given them back, and there is nothing left
+     * to insist about.
+     */
+    const booking = await bookingStore.findBookingRow(record.bookingRef);
+    const isHeld = Boolean(booking) && booking.status === 'HELD';
+    const isConfirmed = Boolean(booking) && booking.status === 'CONFIRMED';
+
+    if (isHeld || isConfirmed) {
+      /**
+       * Only a HELD booking has to prove it still owns its berths.
+       *
+       * A CONFIRMED booking has already had its seats made permanent — it was
+       * confirmed once, and `confirmHolds` already ran that time. Demanding a
+       * live hold again rejects the second payment against a ticket that is
+       * perfectly valid, and does so the worst way: `confirmHolds` treats "no
+       * holds at all" as an expiry and would age out a legitimate booking.
+       *
+       * So HELD is strict (`required`), CONFIRMED is a courtesy call that
+       * settles any remaining pending holds without refusing.
+       */
+      try {
+        await confirmHolds({ bookingRef: record.bookingRef, required: isHeld });
+      } catch (err) {
+        // The berth is gone. Say so with a code an operator can alert on, age
+        // the booking out so it stops claiming seats, and leave the payment for
+        // the refund path rather than issuing a ticket for a berth that is not
+        // there.
+        store.update(orderId, {
+          status: 'failed',
+          failureCode: err.code ?? 'HOLDS_EXPIRED',
+          failureReason: 'seat_hold_expired_before_capture',
+        }, { event: 'PAYMENT_FAILED', extra: { reason: 'holds_expired' } })
+        await bookingStore
+          .transition(record.bookingRef, 'EXPIRED', { reason: 'holds_expired_before_capture', changedBy: 'system' })
+          .catch(() => {})
+        throw err
+      }
+
+      // Money captured, berths confirmed — the booking is a ticket now.
+      const confirmedBooking = await bookingStore
+        .transition(record.bookingRef, 'CONFIRMED', { reason: 'payment_captured', changedBy: 'system' })
+        .catch(() => null)
+      ticketIssued = isHeld && Boolean(confirmedBooking)
+
+      await audit.record({
+        action: audit.ACTIONS.BOOKING_CONFIRMED,
+        entity: audit.ENTITIES.BOOKING,
+        entityId: record.bookingRef,
+        actorId: audit.actorOf(req),
+        details: { orderId, paymentId: razorpayPaymentId },
+      })
+    }
+  }
+
   const updated = store.update(orderId, {
     paymentId: razorpayPaymentId,
     signature: razorpaySignature,
@@ -211,6 +307,19 @@ async function verifyPayment(req, res) {
     failureCode: payment.errorCode,
     failureReason: payment.errorReason,
   }, { event: status === 'failed' ? 'PAYMENT_FAILED' : 'PAYMENT_VERIFIED' })
+
+  // Email the e-ticket. Deliberately not awaited: the traveller has paid and the
+  // response should not wait on a mail server. It never throws, and a failure
+  // is logged by the ticket service rather than surfaced here.
+  if (ticketIssued) {
+    ticketService
+      .sendTicketForBooking(record.bookingRef, {
+        orderId,
+        paymentId: razorpayPaymentId,
+        method: updated.method,
+      })
+      .catch(() => {})
+  }
 
   return res.json(serialise(updated))
 }

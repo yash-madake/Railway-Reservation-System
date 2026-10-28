@@ -206,6 +206,14 @@ const trainsData = [
   }
 ];
 
+/** class_code -> coach_type, and how many berths stack in a bay. */
+const COACH_TYPE = {
+  '1A': 'AC_FIRST', '2A': 'AC_2_TIER', '3A': 'AC_3_TIER',
+  EC: 'EXECUTIVE', CC: 'CHAIR_CAR', '2S': 'GENERAL', SL: 'SLEEPER',
+};
+const BAY_WIDTH = { '3A': 3, '2A': 2, '1A': 2 };
+const CLASS_ORDER = { '1A': 1, '2A': 2, '3A': 3, EC: 4, CC: 5, '2S': 6, SL: 7 };
+
 async function seedRailwayData() {
   console.log('==================================================');
   console.log('    Seeding Team 2 Railway Master Data (MySQL)    ');
@@ -228,15 +236,32 @@ async function seedRailwayData() {
     console.log('Seeding stations...');
     const stationIdMap = new Map();
 
+      // `stations.state` became `state_id` when migration 011 normalised the
+      // schema, so the state name is resolved through the `states` lookup --
+      // upserted first, so a state nothing else has used yet still resolves.
+      const stateIdOf = async (stateName) => {
+        await connection.query(
+          `INSERT INTO states (state_name) VALUES (?)
+           ON DUPLICATE KEY UPDATE state_name = VALUES(state_name);`,
+          [stateName],
+        );
+        const [[row]] = await connection.query(
+          'SELECT state_id FROM states WHERE state_name = ? LIMIT 1;',
+          [stateName],
+        );
+        return row.state_id;
+      };
+
     for (const stn of stationsData) {
+      const stateId = await stateIdOf(stn.state);
       await connection.query(
-        `INSERT INTO stations (station_code, station_name, city, state, timezone, status)
+        `INSERT INTO stations (station_code, station_name, city, state_id, timezone, status)
          VALUES (?, ?, ?, ?, 'Asia/Kolkata', 'active')
          ON DUPLICATE KEY UPDATE 
             station_name = VALUES(station_name),
             city = VALUES(city),
-            state = VALUES(state);`,
-        [stn.code, stn.name, stn.city, stn.state]
+            state_id = VALUES(state_id);`,
+        [stn.code, stn.name, stn.city, stateId]
       );
 
       const [[row]] = await connection.query(
@@ -278,10 +303,27 @@ async function seedRailwayData() {
       // 4. Classes
       await connection.query('DELETE FROM train_classes WHERE train_id = ?;', [trainId]);
       for (const cls of t.classes) {
+        // `class_name` no longer lives on `train_classes` -- it is a property of
+        // the class code, so it is written to the `classes` lookup and joined
+        // from there (migration 011).
         await connection.query(
-          `INSERT INTO train_classes (train_id, class_code, class_name, base_fare, total_seats, available_seats)
-           VALUES (?, ?, ?, ?, ?, ?);`,
-          [trainId, cls.code, cls.name, cls.fare, cls.total, cls.available]
+          `INSERT INTO \`classes\` (class_code, class_name, coach_type, berth_bay_width, sort_order)
+           VALUES (?, ?, ?, ?, ?)
+           ON DUPLICATE KEY UPDATE
+             class_name      = VALUES(class_name),
+             coach_type      = VALUES(coach_type),
+             berth_bay_width = VALUES(berth_bay_width)`,
+          [cls.code, cls.name, COACH_TYPE[cls.code] ?? 'GENERAL', BAY_WIDTH[cls.code] ?? 1, CLASS_ORDER[cls.code] ?? 99]
+        );
+
+        await connection.query(
+          `INSERT INTO train_classes (train_id, class_code, base_fare, total_seats, available_seats)
+           VALUES (?, ?, ?, ?, ?)
+           ON DUPLICATE KEY UPDATE
+             base_fare       = VALUES(base_fare),
+             total_seats     = VALUES(total_seats),
+             available_seats = VALUES(available_seats)`,
+          [trainId, cls.code, cls.fare, cls.total ?? cls.seats ?? 0, cls.available ?? 0]
         );
       }
 

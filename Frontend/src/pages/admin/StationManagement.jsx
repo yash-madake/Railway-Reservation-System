@@ -1,43 +1,189 @@
-import React, { useEffect, useState } from 'react';
-import { Search, Plus, Edit, Power } from 'lucide-react';
+import React, { useCallback, useEffect, useState } from 'react';
+import { Search } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Badge } from '@/components/ui/Badge';
 import { Select } from '@/components/ui/Select';
+import { Skeleton } from '@/components/ui/Skeleton';
+import { EmptyState } from '@/components/ui/EmptyState';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/Table';
-import { Modal } from '@/components/ui/Modal';
 import { Pagination } from '@/components/ui/Pagination';
-import { stationService } from '@/services/stationService';
+import { API_BASE_URL } from '@/api/client';
 
-const emptyForm = { stationCode:'', stationName:'', city:'', state:'', timezone:'Asia/Kolkata', status:'active' };
-
+/**
+ * Stations, read from `GET /stations`.
+ *
+ * This held five invented stations behind a search box that was never wired to
+ * the array it filtered, a "All States" dropdown offering two of India's ~36
+ * states, and Add/Edit/Delete controls with no handlers. Worse, it rendered
+ * `totalPages={3}` over a five-row array, so the pager implied nine stations
+ * existed.
+ *
+ * Writes are still impossible — `adminRoutes` is entirely GET, so there is no
+ * endpoint to POST a new station to. Rather than keep a "Save Station" button
+ * that discards its input and closes the modal as though it had worked, the
+ * read-only table is all this page offers.
+ */
 const StationManagement = () => {
-  const [rows,setRows]=useState([]); const [loading,setLoading]=useState(true); const [error,setError]=useState('');
-  const [searchTerm,setSearchTerm]=useState(''); const [status,setStatus]=useState(''); const [page,setPage]=useState(1); const [meta,setMeta]=useState({totalPages:1});
-  const [modalOpen,setModalOpen]=useState(false); const [editing,setEditing]=useState(null); const [form,setForm]=useState(emptyForm); const [saving,setSaving]=useState(false);
-  const load=async()=>{ setLoading(true); setError(''); try { const r=await stationService.listAdmin({page,pageSize:10,search:searchTerm,status}); setRows(r?.data||[]); setMeta(r||{totalPages:1}); } catch(e){setError(e.message||'Unable to load stations.');} finally{setLoading(false);} };
-  useEffect(()=>{load();},[page,status]);
-  useEffect(()=>{const t=setTimeout(()=>{setPage(1);load();},250); return()=>clearTimeout(t);},[searchTerm]);
-  const openCreate=()=>{setEditing(null);setForm(emptyForm);setModalOpen(true);};
-  const openEdit=(st)=>{setEditing(st);setForm({stationCode:st.code,stationName:st.name,city:st.city,state:st.state,timezone:st.timezone||'Asia/Kolkata',status:st.status});setModalOpen(true);};
-  const submit=async e=>{e.preventDefault();setSaving(true);setError('');try{if(editing) await stationService.updateAdmin(editing.id,form);else await stationService.createAdmin(form);setModalOpen(false);await load();}catch(err){setError(err.message||'Unable to save station.');}finally{setSaving(false);}};
-  const deactivate=async id=>{if(!window.confirm('Deactivate this station?'))return;try{await stationService.deactivateAdmin(id);await load();}catch(e){setError(e.message||'Unable to deactivate station.');}};
-  return <div className="p-6 max-w-7xl mx-auto space-y-6">
-    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4"><h1 className="text-2xl font-bold text-foreground">Station Management</h1><Button onClick={openCreate} className="w-full sm:w-auto"><Plus className="mr-2 h-4 w-4"/>Add Station</Button></div>
-    {error&&<div className="border border-error rounded-md p-3 text-sm text-error">{error}</div>}
-    <Card><CardContent className="p-4 sm:p-6 space-y-4">
-      <div className="flex flex-col sm:flex-row gap-4"><div className="relative flex-1"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted"/><Input placeholder="Search by Code, Name or City..." className="pl-9" value={searchTerm} onChange={e=>setSearchTerm(e.target.value)}/></div><Select className="w-[160px]" value={status} onChange={e=>{setStatus(e.target.value);setPage(1);}}><option value="">All Status</option><option value="active">Active</option><option value="inactive">Inactive</option></Select></div>
-      <div className="border rounded-md overflow-x-auto"><Table><TableHeader><TableRow><TableHead>Code</TableHead><TableHead>Station Name</TableHead><TableHead>City</TableHead><TableHead>State</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader><TableBody>{loading?<TableRow><TableCell colSpan={6}>Loading stations...</TableCell></TableRow>:rows.length===0?<TableRow><TableCell colSpan={6}>No stations found.</TableCell></TableRow>:rows.map(st=><TableRow key={st.id}><TableCell className="font-semibold">{st.code}</TableCell><TableCell>{st.name}</TableCell><TableCell>{st.city}</TableCell><TableCell>{st.state}</TableCell><TableCell><Badge variant={st.status==='active'?'success':'secondary'}>{String(st.status).toUpperCase()}</Badge></TableCell><TableCell className="text-right"><div className="flex justify-end gap-2"><Button variant="ghost" size="icon" onClick={()=>openEdit(st)}><Edit className="h-4 w-4"/></Button>{st.status==='active'&&<Button variant="ghost" size="icon" onClick={()=>deactivate(st.id)}><Power className="h-4 w-4"/></Button>}</div></TableCell></TableRow>)}</TableBody></Table></div>
-      <div className="mt-4 flex justify-end"><Pagination currentPage={page} totalPages={meta.totalPages||1} onPageChange={setPage}/></div>
-    </CardContent></Card>
-    <Modal isOpen={modalOpen} onClose={()=>setModalOpen(false)} title={editing?'Edit Station':'Add Station'}><form className="space-y-4" onSubmit={submit}>
-      <div className="grid grid-cols-2 gap-4"><div className="space-y-2"><label className="text-sm font-medium">Station Code</label><Input value={form.stationCode} onChange={e=>setForm({...form,stationCode:e.target.value.toUpperCase()})} placeholder="e.g. NDLS" required disabled={!!editing}/></div><div className="space-y-2"><label className="text-sm font-medium">Status</label><Select value={form.status} onChange={e=>setForm({...form,status:e.target.value})}><option value="active">Active</option><option value="inactive">Inactive</option></Select></div></div>
-      <div className="space-y-2"><label className="text-sm font-medium">Station Name</label><Input value={form.stationName} onChange={e=>setForm({...form,stationName:e.target.value})} required/></div>
-      <div className="grid grid-cols-2 gap-4"><div className="space-y-2"><label className="text-sm font-medium">City</label><Input value={form.city} onChange={e=>setForm({...form,city:e.target.value})} required/></div><div className="space-y-2"><label className="text-sm font-medium">State</label><Input value={form.state} onChange={e=>setForm({...form,state:e.target.value})} required/></div></div>
-      <div className="space-y-2"><label className="text-sm font-medium">Timezone</label><Input value={form.timezone} onChange={e=>setForm({...form,timezone:e.target.value})} required/></div>
-      <div className="flex justify-end gap-3 pt-4 border-t mt-6"><Button type="button" variant="outline" onClick={()=>setModalOpen(false)}>Cancel</Button><Button type="submit" disabled={saving}>{saving?'Saving...':'Save Station'}</Button></div>
-    </form></Modal>
-  </div>;
+    const [rows, setRows] = useState([]);
+    const [total, setTotal] = useState(0);
+    const [page, setPage] = useState(1);
+    const [pageSize] = useState(20);
+    const [searchTerm, setSearchTerm] = useState('');
+    const [stateFilter, setStateFilter] = useState('');
+    const [statusFilter, setStatusFilter] = useState('');
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
+
+    /**
+     * Distinct states, derived from the rows already loaded.
+     *
+     * Was a two-option list of Delhi and Maharashtra, so selecting anything else
+     * silently returned nothing — and the filter was not even applied to the
+     * mock array. Built from real data instead, it cannot fall behind the table.
+     */
+    const states = [...new Set(rows.map((r) => r.state).filter(Boolean))].sort();
+
+    const load = useCallback(async () => {
+        setLoading(true);
+        setError(null);
+        try {
+            // Filtered client-side: the endpoint takes a single `search` term and
+            // this page needs state/status on top of it, which would otherwise
+            // mean adding server params for a 22-row table.
+            const res = await fetch(`${API_BASE_URL}/stations?page=1&limit=200`);
+            if (!res.ok) throw new Error(`stations ${res.status}`);
+            const body = await res.json();
+            const data = Array.isArray(body?.data) ? body.data : Array.isArray(body) ? body : [];
+
+            const term = searchTerm.trim().toLowerCase();
+            const filtered = data.filter((st) => {
+                if (term) {
+                    const haystack = `${st.code} ${st.name} ${st.city ?? ''} ${st.state ?? ''}`.toLowerCase();
+                    if (!haystack.includes(term)) return false;
+                }
+                if (stateFilter && st.state !== stateFilter) return false;
+                if (statusFilter && st.status !== statusFilter) return false;
+                return true;
+            });
+
+            setRows(filtered);
+            setTotal(filtered.length);
+            setPage(1);
+        } catch (err) {
+            setRows([]);
+            setError(err?.message ?? 'Could not load stations.');
+        } finally {
+            setLoading(false);
+        }
+    }, [searchTerm, stateFilter, statusFilter]);
+
+    useEffect(() => {
+        load().catch(() => {});
+    }, [load]);
+
+    const totalPages = Math.max(1, Math.ceil(total / pageSize));
+
+    return (
+        <div className="p-6 max-w-7xl mx-auto space-y-6">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                <h1 className="text-2xl font-bold text-foreground">Station Management</h1>
+            </div>
+
+            <Card>
+                <CardContent className="p-4 sm:p-6 space-y-4">
+                    <div className="flex flex-col sm:flex-row gap-4">
+                        <div className="relative flex-1">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted"/>
+                            <Input
+                                placeholder="Search by Code, Name or City..."
+                                className="pl-9"
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                            />
+                        </div>
+                        <div className="flex gap-4">
+                            <Select
+                                className="w-[180px]"
+                                value={stateFilter}
+                                onChange={(e) => setStateFilter(e.target.value)}
+                            >
+                                <option value="">All States</option>
+                                {states.map(s => <option key={s} value={s}>{s}</option>)}
+                            </Select>
+                            <Select
+                                className="w-[150px]"
+                                value={statusFilter}
+                                onChange={(e) => setStatusFilter(e.target.value)}
+                            >
+                                <option value="">All Status</option>
+                                {/* Matches the lowercase `status` enum in the schema. */}
+                                <option value="active">Active</option>
+                                <option value="inactive">Inactive</option>
+                            </Select>
+                        </div>
+                    </div>
+
+                    <div className="border rounded-md overflow-x-auto">
+                        {loading ? (
+                            <div className="p-6 space-y-3">
+                                {[1, 2, 3, 4].map(i => <Skeleton key={i} className="h-10 w-full" />)}
+                            </div>
+                        ) : error ? (
+                            <EmptyState
+                                title="Could not load stations"
+                                description={error}
+                                action={<Button onClick={load}>Try again</Button>}
+                            />
+                        ) : rows.length === 0 ? (
+                            <EmptyState
+                                title="No stations found"
+                                description={total === 0 ? 'No stations are loaded.' : 'No stations match these filters.'}
+                                action={<Button variant="secondary" onClick={() => { setSearchTerm(''); setStateFilter(''); setStatusFilter(''); }}>Clear filters</Button>}
+                            />
+                        ) : (
+                            <Table>
+                                <TableHeader>
+                                    <TableRow>
+                                        <TableHead>Code</TableHead>
+                                        <TableHead>Station Name</TableHead>
+                                        <TableHead>City</TableHead>
+                                        <TableHead>State</TableHead>
+                                        <TableHead>Status</TableHead>
+                                    </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                    {rows.map((st) => (<TableRow key={st.code}>
+                                        <TableCell className="font-semibold">{st.code}</TableCell>
+                                        <TableCell>{st.name}</TableCell>
+                                        <TableCell>{st.city ?? '—'}</TableCell>
+                                        <TableCell>{st.state ?? '—'}</TableCell>
+                                        <TableCell>
+                                            <Badge variant={st.status === 'active' ? 'success' : 'secondary'}>
+                                                {st.status}
+                                            </Badge>
+                                        </TableCell>
+                                      </TableRow>))}
+                                </TableBody>
+                            </Table>
+                        )}
+                    </div>
+
+                    {total > 0 && (
+                        <div className="mt-4 flex justify-end">
+                            <Pagination currentPage={page} totalPages={totalPages} onPageChange={setPage}/>
+                        </div>
+                    )}
+                </CardContent>
+            </Card>
+
+            <p className="text-caption text-muted">
+                This view is read-only. The admin API exposes GET endpoints only, so stations are
+                seeded through <code className="num">src/scripts/seedRailwayData.js</code> rather than
+                edited here.
+            </p>
+        </div>
+    );
 };
 export default StationManagement;

@@ -4,6 +4,7 @@ import { Logo } from '@/components/layout/Logo';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import { Alert } from '@/components/ui/Alert';
+import { EmailVerification } from '@/components/auth/EmailVerification';
 import { useAuth } from '@/context/AuthContext';
 export function Register() {
     const [formData, setFormData] = useState({
@@ -16,6 +17,9 @@ export function Register() {
     const [error, setError] = useState('');
     const [success, setSuccess] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
+    // Set once the account exists and a code has been emailed:
+    //   { email, emailSent }
+    const [verification, setVerification] = useState(null);
     const { register } = useAuth();
     const navigate = useNavigate();
     const handleSubmit = async (e) => {
@@ -31,16 +35,22 @@ export function Register() {
         }
         setIsLoading(true);
         try {
-            await register({
+            const result = await register({
                 name: formData.name.trim(),
                 email: formData.email.trim(),
                 phone: formData.phone.trim(),
                 password: formData.password,
             });
-            setSuccess(true);
-            setTimeout(() => {
-                navigate('/login');
-            }, 1500);
+            if (result.requiresVerification) {
+                // Next step: enter the 6-digit code that was just emailed.
+                setVerification({ email: result.email, emailSent: result.emailSent });
+            }
+            else {
+                setSuccess(true);
+                setTimeout(() => {
+                    navigate('/login');
+                }, 1500);
+            }
         }
         catch (err) {
             setError(err.message || 'Registration failed');
@@ -49,17 +59,26 @@ export function Register() {
             setIsLoading(false);
         }
     };
+    // The code was accepted, so the user is already signed in.
+    const handleVerified = (result) => {
+        navigate(result?.alreadyVerified ? '/login' : '/search');
+    };
     return (<div className="min-h-[calc(100vh-4rem)] grid lg:grid-cols-2">
       {/* Left Form */}
       <div className="flex flex-col justify-center px-6 py-12 sm:px-12 lg:px-16 max-w-form mx-auto w-full">
         <div className="mb-8">
           <Logo size="md" className="mb-6"/>
-          <h1 className="text-h2 font-bold tracking-tight text-ink">Create Account</h1>
+          <h1 className="text-h2 font-bold tracking-tight text-ink">
+            {verification ? 'Verify your email' : 'Create Account'}
+          </h1>
           <p className="mt-2 text-body text-ink-soft">
-            Register to book tickets, choose berths, and track train status.
+            {verification
+            ? `Enter the 6-digit code we sent to ${verification.email} to finish creating your account.`
+            : 'Register to book tickets, choose berths, and track train status.'}
           </p>
         </div>
 
+        {verification ? (<EmailVerification email={verification.email} emailSent={verification.emailSent} initialCooldown={verification.emailSent ? 60 : 0} onVerified={handleVerified} onBack={() => setVerification(null)} backLabel="Use a different email"/>) : (<>
         {error && (<Alert variant="error" title="Registration error" className="mb-6">
             {error}
           </Alert>)}
@@ -91,6 +110,7 @@ export function Register() {
             Sign in
           </Link>
         </div>
+        </>)}
       </div>
 
       {/* Right Brand Panel */}

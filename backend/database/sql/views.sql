@@ -20,7 +20,11 @@ SELECT
     p.`gateway_order_id`,
     p.`gateway_payment_id`,
     p.`amount`,
-    p.`refunded_amount`,
+    -- Derived, not stored: `payments.refunded_amount` was dropped in migration
+    -- 011. It duplicated SUM(refunds.amount) and had no trigger keeping the two
+    -- in step, so it was a second place for the same fact to disagree with
+    -- itself. COALESCE matters -- a payment with no refunds has no row to sum.
+    COALESCE((SELECT SUM(r2.`amount`) FROM `refunds` r2 WHERE r2.`payment_id` = p.`payment_id`), 0) AS `refunded_amount`,
     p.`currency`,
     p.`status`,
     p.`attempt_number`,
@@ -29,13 +33,16 @@ SELECT
     p.`failure_code`,
     p.`failure_reason`,
     p.`expires_at`,
-    p.`train_no`,
-    p.`train_name`,
-    p.`from_station`,
-    p.`to_station`,
-    p.`passenger_name`,
-    p.`passenger_email`,
-    p.`passenger_contact`,
+    -- Joined in rather than copied onto `payments`, so a booking whose train is
+    -- renamed shows the new name here immediately. The audit found 2 bookings
+    -- whose stored copy already disagreed with `trains`.
+    tr.`train_number`                                  AS `train_no`,
+    tr.`train_name`,
+    os.`station_code`                                  AS `from_station`,
+    ds.`station_code`                                  AS `to_station`,
+    bp.`full_name`                                     AS `passenger_name`,
+    b.`contact_email`                                  AS `passenger_email`,
+    b.`contact_phone`                                  AS `passenger_contact`,
     p.`captured_at`,
     p.`failed_at`,
     p.`refunded_at`,
@@ -68,4 +75,18 @@ LEFT JOIN `payment_transactions` t
 LEFT JOIN `refunds` r
        ON r.`payment_id` = p.`payment_id`
 LEFT JOIN `payment_methods` pm
-       ON pm.`code` = p.`method_code`;
+       ON pm.`code` = p.`method_code`
+-- The journey, reached through the booking rather than copied onto the payment.
+LEFT JOIN `bookings` b
+       ON b.`booking_id` = p.`booking_id`
+-- Aliased `tr`, not `t`: `payment_transactions` is already joined above as
+-- `t`, and MySQL rejects a second join reusing the same alias.
+LEFT JOIN `trains` tr
+       ON tr.`id` = b.`train_id`
+LEFT JOIN `stations` os
+       ON os.`id` = b.`origin_station_id`
+LEFT JOIN `stations` ds
+       ON ds.`id` = b.`destination_station_id`
+-- First passenger of the booking, for the "who paid" column.
+LEFT JOIN `booking_passengers` bp
+       ON bp.`booking_id` = b.`booking_id` AND bp.`position` = 1;

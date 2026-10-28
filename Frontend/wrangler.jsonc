@@ -4,5 +4,10 @@
 	"assets": {
 		"directory": "./dist",
 		"not_found_handling": "single-page-application"
-	}
+	},
+	// Required for Worker Previews; empty because this Worker is assets-only
+	// and has no bindings or vars to override. Do not put VITE_* here: those
+	// are inlined at build time, so preview builds need the build env var set
+	// in the dashboard instead.
+	"previews": {}
 }

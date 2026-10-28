@@ -2,14 +2,37 @@
   "name": "backend",
   "version": "1.0.0",
   "description": "",
-  "main": "index.js",
+  "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
+    "test": "node tests/payment.test.js",
+    "test:db": "node tests/db.test.js",
+    "test:seats": "node tests/seatHold.test.js",
+    "test:bookings": "node tests/booking.test.js",
+    "test:auth": "node tests/auth_profile.test.js",
+    "test:team2": "node tests/team2.test.js",
+    "test:team3": "node tests/team3.test.js",
+    "test:all": "node tests/payment.test.js && node tests/booking.test.js && node tests/seatHold.test.js && node tests/db.test.js && node tests/auth_profile.test.js && node tests/team2.test.js && node tests/team3.test.js",
     "migrate": "node src/scripts/runMigrations.js",
     "seed:team7": "node src/scripts/seedTeam7.js",
-    "test": "node --test tests/*.test.js",
-    "import:provided-data": "node src/scripts/importProvidedData.js"
+    "import:provided-data": "node src/scripts/importProvidedData.js",
+    "db:migrate": "node src/scripts/runMigrations.js && sequelize-cli db:migrate",
+    "db:migrate:raw": "node src/scripts/runMigrations.js",
+    "db:migrate:undo": "sequelize-cli db:migrate:undo",
+    "db:migrate:undo:all": "sequelize-cli db:migrate:undo:all",
+    "db:migrate:status": "sequelize-cli db:migrate:status",
+    "db:seed": "npm run db:seed:admin && npm run db:seed:railway && npm run db:seed:network && npm run db:seed:team3 && npm run db:seed:bookings",
+    "db:seed:admin": "node src/scripts/seedAdmin.js",
+    "db:seed:railway": "node src/scripts/seedRailwayData.js",
+    "db:seed:coaches": "node src/scripts/seedCoaches.js",
+    "db:seed:network": "node src/scripts/seedExpandedNetwork.js",
+    "db:seed:team3": "node src/scripts/seedTeam3Datasets.js",
+    "db:seed:full": "node src/scripts/seedFullRailwayDatasets.js",
+    "db:seed:bookings": "node src/scripts/seedBookings.js",
+    "db:seed:undo": "sequelize-cli db:seed:undo:all",
+    "db:reset": "npm run db:migrate && npm run db:seed",
+    "db:shell": "node scripts/db-shell.js"
   },
   "keywords": [],
   "author": "",
@@ -18,12 +41,21 @@
   "dependencies": {
     "bcryptjs": "^3.0.3",
     "cors": "^2.8.6",
-    "dotenv": "^18.0.3",
+    "dotenv": "^18.0.6",
     "express": "^5.2.1",
+    "express-rate-limit": "^8.7.1",
+    "ioredis": "^6.0.0",
     "jsonwebtoken": "^9.0.3",
-    "mysql2": "^3.24.4"
+    "morgan": "^1.12.1",
+    "mysql2": "^3.24.4",
+    "nodemailer": "^10.1.7",
+    "pdfkit": "^0.20.2",
+    "rate-limit-redis": "^6.0.1",
+    "razorpay": "^2.9.8",
+    "sequelize": "^6.37.8"
   },
   "devDependencies": {
-    "nodemon": "^3.1.14"
+    "nodemon": "^3.1.14",
+    "sequelize-cli": "^6.6.5"
   }
 }

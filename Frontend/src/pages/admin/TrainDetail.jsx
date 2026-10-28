@@ -1,68 +1,288 @@
 import React, { useEffect, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Plus, Trash2, Clock, Users } from 'lucide-react';
+import { useParams, useNavigate } from 'react-router-dom';
+import { ArrowLeft, Clock, Users, Ticket } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
-import { Input } from '@/components/ui/Input';
-import { Modal } from '@/components/ui/Modal';
-import { stationService } from '@/services/stationService';
-import { trainService } from '@/services/trainService';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/Table';
+import { Skeleton } from '@/components/ui/Skeleton';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { bookingService } from '@/services/bookingService';
 
-export default function TrainDetail() {
-  const { id } = useParams();
-  const navigate = useNavigate();
-  const [train, setTrain] = useState(null);
-  const [stations, setStations] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [routeModal, setRouteModal] = useState(false);
-  const [savingRoute, setSavingRoute] = useState(false);
-  const [routeForm, setRouteForm] = useState({ stationCode: '', stopSequence: '', arrivalTime: '', departureTime: '', distanceKm: '', dayOffset: 1, haltMinutes: 0, platform: '1' });
+const DAYS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
 
-  const load = async () => {
-    try { setLoading(true); setError(''); setTrain(await trainService.getAdmin(id)); }
-    catch (e) { setError(e.message || 'Unable to load train.'); }
-    finally { setLoading(false); }
-  };
-  useEffect(() => { load(); stationService.getAllStations().then(r => setStations(Array.isArray(r) ? r : r?.data || r?.stations || [])).catch(() => {}); }, [id]);
+/**
+ * Elapsed running time, from the timetable.
+ *
+ * Crosses midnight. The previous version printed a literal "16h 05m" outside the
+ * train object entirely, so it was wrong for every train except by coincidence.
+ */
+function durationOf(stops) {
+    if (!stops || stops.length < 2) return null;
+    const toMinutes = (t) => {
+        const m = /^(\d{1,2}):(\d{2})/.exec(String(t ?? ''));
+        return m ? Number(m[1]) * 60 + Number(m[2]) : null;
+    };
+    const first = stops[0];
+    const last = stops[stops.length - 1];
+    const start = toMinutes(first.departureTime);
+    const end = toMinutes(last.arrivalTime ?? last.departureTime);
+    if (start === null || end === null) return null;
 
-  const addStop = async (e) => {
-    e.preventDefault(); setSavingRoute(true); setError('');
-    try { await trainService.addRouteStop(id, routeForm); setRouteModal(false); setRouteForm({ stationCode:'',stopSequence:'',arrivalTime:'',departureTime:'',distanceKm:'',dayOffset:1,haltMinutes:0,platform:'1' }); await load(); }
-    catch (e) { setError(e.message || 'Unable to add route stop.'); }
-    finally { setSavingRoute(false); }
-  };
-
-  const removeStop = async (routeId) => {
-    if (!window.confirm('Delete this route stop?')) return;
-    try { await trainService.deleteRouteStop(id, routeId); await load(); }
-    catch (e) { setError(e.message || 'Unable to delete route stop.'); }
-  };
-
-  if (loading) return <div className="text-ink-soft">Loading train…</div>;
-  if (!train) return <Card><CardContent className="p-8 text-error-strong">{error || 'Train not found.'}</CardContent></Card>;
-  const routes = train.routes || [];
-  const totalSeats = (train.classes || []).reduce((sum, c) => sum + Number(c.totalSeats || 0), 0);
-
-  return <div className="max-w-7xl mx-auto space-y-6">
-    <div className="flex flex-col sm:flex-row justify-between gap-4 sm:items-center">
-      <div className="flex items-center gap-3 min-w-0"><Button variant="ghost" size="icon" onClick={() => navigate('/admin/trains')}><ArrowLeft className="size-5" /></Button><div className="min-w-0"><h1 className="text-2xl font-bold text-ink truncate">{train.trainNumber} — {train.trainName}</h1><p className="text-sm text-ink-soft">{train.trainType}</p></div></div>
-      <Button onClick={() => setRouteModal(true)}><Plus className="size-4 mr-2" /> Add Route Stop</Button>
-    </div>
-    {error && <div className="border border-error-strong/30 bg-error/10 rounded-control p-3 text-sm text-error-strong">{error}</div>}
-
-    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-      <Card><CardContent className="p-4"><div className="text-xs text-ink-soft">Status</div><Badge className="mt-2" variant={train.status === 'active' ? 'success' : 'secondary'}>{String(train.status).toUpperCase()}</Badge></CardContent></Card>
-      <Card><CardContent className="p-4"><div className="text-xs text-ink-soft">Route stops</div><div className="text-2xl font-bold mt-1">{routes.length}</div></CardContent></Card>
-      <Card><CardContent className="p-4"><div className="text-xs text-ink-soft">Total capacity</div><div className="text-2xl font-bold mt-1">{totalSeats.toLocaleString('en-IN')}</div></CardContent></Card>
-      <Card><CardContent className="p-4"><div className="text-xs text-ink-soft">Running days</div><div className="text-sm font-semibold mt-2">{(train.runningDays || []).join(', ') || '—'}</div></CardContent></Card>
-    </div>
-
-    <Card><CardHeader><div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3"><CardTitle>Route & Schedule</CardTitle><span className="text-sm text-ink-soft">{routes.length} stops</span></div></CardHeader><CardContent className="p-0"><div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="border-b bg-surface-sunken"><th className="text-left p-3">#</th><th className="text-left p-3">Station</th><th className="text-left p-3">Arrival</th><th className="text-left p-3">Departure</th><th className="text-left p-3">Distance</th><th className="text-right p-3">Action</th></tr></thead><tbody>{routes.map(r => <tr key={r.id} className="border-b last:border-0"><td className="p-3 font-semibold">{r.stopSequence}</td><td className="p-3"><div className="font-semibold">{r.stationName}</div><div className="text-xs text-ink-soft">{r.stationCode} · {r.city}</div></td><td className="p-3">{r.arrivalTime || '—'}</td><td className="p-3">{r.departureTime || '—'}</td><td className="p-3">{Number(r.distanceKm || 0).toLocaleString('en-IN')} km</td><td className="p-3 text-right"><Button variant="ghost" size="icon" onClick={() => removeStop(r.id)} disabled={routes.length <= 2}><Trash2 className="size-4 text-error-strong" /></Button></td></tr>)}</tbody></table></div></CardContent></Card>
-
-    <div className="grid lg:grid-cols-2 gap-6"><Card><CardHeader><CardTitle>Classes & Capacity</CardTitle></CardHeader><CardContent className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="border-b"><th className="text-left py-2">Class</th><th className="text-left py-2">Name</th><th className="text-right py-2">Seats</th></tr></thead><tbody>{(train.classes || []).map(c => <tr key={c.id} className="border-b last:border-0"><td className="py-2 font-bold">{c.classCode}</td><td className="py-2">{c.className}</td><td className="py-2 text-right">{c.totalSeats}</td></tr>)}</tbody></table></CardContent></Card><Card><CardHeader><CardTitle>Operational Info</CardTitle></CardHeader><CardContent className="space-y-3 text-sm"><div className="flex gap-3"><Clock className="size-4 mt-0.5 text-royal" /><span>Pantry: <strong>{train.pantryAvailable ? 'Available' : 'Not available'}</strong></span></div><div className="flex gap-3"><Users className="size-4 mt-0.5 text-royal" /><span>Capacity: <strong>{totalSeats.toLocaleString('en-IN')} seats</strong></span></div></CardContent></Card></div>
-
-    <Modal isOpen={routeModal} onClose={() => setRouteModal(false)} title="Add Route Stop"><form onSubmit={addStop} className="space-y-4"><div className="grid sm:grid-cols-2 gap-4"><div><label className="text-sm font-medium">Station</label><select className="mt-1 w-full rounded-control border border-line-mid p-2.5 bg-white" value={routeForm.stationCode} onChange={e=>setRouteForm({...routeForm,stationCode:e.target.value})} required><option value="">Select station</option>{stations.map(s=><option key={s.id||s.code} value={s.code}>{s.name} ({s.code})</option>)}</select></div><div><label className="text-sm font-medium">Stop sequence</label><Input type="number" min="1" value={routeForm.stopSequence} onChange={e=>setRouteForm({...routeForm,stopSequence:e.target.value})} required/></div><div><label className="text-sm font-medium">Arrival</label><Input type="time" value={routeForm.arrivalTime} onChange={e=>setRouteForm({...routeForm,arrivalTime:e.target.value})}/></div><div><label className="text-sm font-medium">Departure</label><Input type="time" value={routeForm.departureTime} onChange={e=>setRouteForm({...routeForm,departureTime:e.target.value})}/></div><div><label className="text-sm font-medium">Distance (km)</label><Input type="number" min="0" value={routeForm.distanceKm} onChange={e=>setRouteForm({...routeForm,distanceKm:e.target.value})}/></div><div><label className="text-sm font-medium">Platform</label><Input value={routeForm.platform} onChange={e=>setRouteForm({...routeForm,platform:e.target.value})}/></div></div><div className="flex justify-end gap-3"><Button type="button" variant="outline" onClick={()=>setRouteModal(false)}>Cancel</Button><Button type="submit" disabled={savingRoute}>{savingRoute?'Adding…':'Add Stop'}</Button></div></form></Modal>
-  </div>;
+    let mins = end - start + (Number(last.day ?? 1) - Number(first.day ?? 1)) * 24 * 60;
+    if (mins < 0) mins += 24 * 60;
+    return `${Math.floor(mins / 60)}h ${String(mins % 60).padStart(2, '0')}m`;
 }
+
+/**
+ * Admin view of one train, from `GET /trains/:trainNo`.
+ *
+ * This read `:id` from the route and ignored it, rendering a literal 12951
+ * "Rajdhani Express" with hand-written coach counts (48 + 260 + 792, which summed
+ * to the "1,100 Seats" tile beside it) plus a hardcoded "92% occupancy" and
+ * "85% on time". Neither percentage is measured anywhere, so both tiles are gone
+ * rather than replaced by invented figures.
+ *
+ * Edit and Delete are removed: `adminRoutes` is entirely GET, so those controls
+ * could only ever look functional.
+ */
+const TrainDetail = () => {
+    const { id } = useParams();
+    const navigate = useNavigate();
+    const [train, setTrain] = useState(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
+
+    useEffect(() => {
+        let isMounted = true;
+        setLoading(true);
+        setError(null);
+
+        bookingService
+            .getTrainDetails(id)
+            .then((res) => {
+                if (!isMounted) return;
+                const payload = res?.data ?? res;
+                if (!payload?.trainNumber) throw new Error(`No train matching "${id}".`);
+                setTrain(payload);
+            })
+            .catch((err) => {
+                if (!isMounted) return;
+                setError(err?.message ?? 'The train could not be loaded.');
+            })
+            .finally(() => {
+                if (isMounted) setLoading(false);
+            });
+
+        return () => {
+            isMounted = false;
+        };
+    }, [id]);
+
+    if (loading) {
+        return (
+            <div className="p-6 max-w-6xl mx-auto space-y-6">
+                <Skeleton className="h-10 w-1/3" />
+                <Skeleton className="h-64 w-full" />
+            </div>
+        );
+    }
+
+    if (error || !train) {
+        return (
+            <div className="p-6 max-w-6xl mx-auto space-y-6">
+                <Button variant="ghost" size="icon" onClick={() => navigate('/admin/trains')}>
+                    <ArrowLeft className="h-5 w-5"/>
+                </Button>
+                <EmptyState
+                    title="Train not found"
+                    description={error ?? `No train matching "${id}" is in the database.`}
+                    action={<Button onClick={() => navigate('/admin/trains')}>Back to trains</Button>}
+                />
+            </div>
+        );
+    }
+
+    const stops = train.stops ?? [];
+    const classes = train.classes ?? [];
+    const duration = durationOf(stops);
+    const runningDays = train.runningDays ?? [];
+    // Capacity is the sum of what the price list records, not a separate figure.
+    const capacity = classes.reduce((sum, c) => sum + (Number(c.totalSeats) || 0), 0);
+    const available = classes.reduce((sum, c) => sum + (Number(c.availableSeats) || 0), 0);
+
+    return (
+        <div className="p-6 max-w-6xl mx-auto space-y-6">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                <div className="flex items-center gap-4">
+                    <Button variant="ghost" size="icon" onClick={() => navigate('/admin/trains')}>
+                        <ArrowLeft className="h-5 w-5"/>
+                    </Button>
+                    <div>
+                        <h1 className="text-2xl font-bold flex items-center gap-3">
+                            {train.trainNumber} - {train.trainName}
+                            <Badge variant={train.status === 'active' ? 'success' : 'secondary'}>{train.status}</Badge>
+                        </h1>
+                        <p className="text-muted">{train.trainType}</p>
+                    </div>
+                </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                {/* Route Info */}
+                <Card className="md:col-span-2">
+                    <CardHeader>
+                        <CardTitle>Route &amp; Schedule</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-6">
+                        <div className="flex flex-col sm:flex-row justify-between items-center p-4 bg-gray-50 rounded-lg">
+                            <div className="text-center sm:text-left">
+                                <p className="text-sm text-muted">Source</p>
+                                <p className="font-semibold text-lg">{train.source?.name} ({train.source?.code})</p>
+                                <p className="text-xl font-bold text-primary">{train.source?.departureTime ?? '—'}</p>
+                            </div>
+                            <div className="flex-1 flex flex-col items-center px-4 my-4 sm:my-0">
+                                <p className="text-xs text-muted mb-1">{train.totalDistanceKm ?? '—'} km</p>
+                                <div className="w-full h-[2px] bg-border relative">
+                                    <div className="absolute top-1/2 left-0 -translate-y-1/2 w-2 h-2 rounded-full bg-primary"></div>
+                                    <div className="absolute top-1/2 right-0 -translate-y-1/2 w-2 h-2 rounded-full bg-primary"></div>
+                                </div>
+                                <p className="text-xs text-muted mt-1">{duration ?? '—'}</p>
+                            </div>
+                            <div className="text-center sm:text-right">
+                                <p className="text-sm text-muted">Destination</p>
+                                <p className="font-semibold text-lg">{train.destination?.name} ({train.destination?.code})</p>
+                                <p className="text-xl font-bold text-primary">{train.destination?.arrivalTime ?? '—'}</p>
+                            </div>
+                        </div>
+
+                        <div>
+                            <h4 className="text-sm font-medium mb-2">Running Days</h4>
+                            <div className="flex flex-wrap gap-2">
+                                {DAYS.map(day => {
+                                    const runs = runningDays.includes(day);
+                                    return (
+                                        <Badge
+                                            key={day}
+                                            variant={runs ? 'default' : 'secondary'}
+                                            className={runs ? 'bg-primary' : 'bg-gray-100 text-gray-400'}
+                                        >
+                                            {day.slice(0, 2)}
+                                        </Badge>
+                                    );
+                                })}
+                            </div>
+                        </div>
+
+                        {stops.length > 0 && (
+                            <div>
+                                <h4 className="text-sm font-medium mb-2">Stops ({stops.length})</h4>
+                                <div className="overflow-x-auto">
+                                    <Table>
+                                        <TableHeader>
+                                            <TableRow>
+                                                <TableHead>#</TableHead>
+                                                <TableHead>Station</TableHead>
+                                                <TableHead>Arr</TableHead>
+                                                <TableHead>Dep</TableHead>
+                                                <TableHead>Platform</TableHead>
+                                                <TableHead className="text-right">Distance</TableHead>
+                                            </TableRow>
+                                        </TableHeader>
+                                        <TableBody>
+                                            {stops.map(s => (
+                                                <TableRow key={s.station?.code ?? s.sequence}>
+                                                    <TableCell className="num">{s.sequence}</TableCell>
+                                                    <TableCell>
+                                                        {s.station?.name} <span className="text-muted">({s.station?.code})</span>
+                                                    </TableCell>
+                                                    <TableCell className="num">{s.arrivalTime ?? '—'}</TableCell>
+                                                    <TableCell className="num">{s.departureTime ?? '—'}</TableCell>
+                                                    <TableCell>{s.platform ?? '—'}</TableCell>
+                                                    <TableCell className="text-right num">{s.distanceKm} km</TableCell>
+                                                </TableRow>
+                                            ))}
+                                        </TableBody>
+                                    </Table>
+                                </div>
+                            </div>
+                        )}
+                    </CardContent>
+                </Card>
+
+                {/* Stats — only what is counted. */}
+                <Card>
+                    <CardHeader>
+                        <CardTitle>Quick Stats</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                        <div className="flex items-center gap-4">
+                            <div className="p-3 bg-blue-50 text-blue-600 rounded-full">
+                                <Users className="h-5 w-5"/>
+                            </div>
+                            <div>
+                                <p className="text-sm text-muted">Total Capacity</p>
+                                <p className="font-bold">{capacity > 0 ? `${capacity.toLocaleString('en-IN')} seats` : '—'}</p>
+                            </div>
+                        </div>
+                        <div className="flex items-center gap-4">
+                            <div className="p-3 bg-green-50 text-green-600 rounded-full">
+                                <Ticket className="h-5 w-5"/>
+                            </div>
+                            <div>
+                                <p className="text-sm text-muted">Seats Available</p>
+                                <p className="font-bold">{available > 0 ? available.toLocaleString('en-IN') : '—'}</p>
+                            </div>
+                        </div>
+                        <div className="flex items-center gap-4">
+                            <div className="p-3 bg-amber-50 text-amber-600 rounded-full">
+                                <Clock className="h-5 w-5"/>
+                            </div>
+                            <div>
+                                <p className="text-sm text-muted">Pantry</p>
+                                <p className="font-bold">{train.pantryAvailable ? 'Available' : 'Not available'}</p>
+                            </div>
+                        </div>
+                    </CardContent>
+                </Card>
+            </div>
+
+            {/* Composition */}
+            <Card>
+                <CardHeader>
+                    <CardTitle>Class Composition</CardTitle>
+                </CardHeader>
+                <CardContent>
+                    <Table>
+                        <TableHeader>
+                            <TableRow>
+                                <TableHead>Class</TableHead>
+                                <TableHead>Class Name</TableHead>
+                                <TableHead>Base Fare</TableHead>
+                                <TableHead>Available</TableHead>
+                                <TableHead className="text-right">Total Seats</TableHead>
+                            </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                            {classes.map(cls => (<TableRow key={cls.type}>
+                                <TableCell className="font-bold">{cls.type}</TableCell>
+                                <TableCell>{cls.name}</TableCell>
+                                <TableCell className="num">{cls.fare != null ? `₹${cls.fare}` : '—'}</TableCell>
+                                <TableCell className="num">{cls.availableSeats ?? '—'}</TableCell>
+                                <TableCell className="text-right num">{cls.totalSeats ?? '—'}</TableCell>
+                              </TableRow>))}
+                            {classes.length === 0 && (
+                                <TableRow>
+                                    <TableCell colSpan={5} className="text-muted">
+                                        No classes are configured for this train.
+                                    </TableCell>
+                                </TableRow>
+                            )}
+                        </TableBody>
+                    </Table>
+                </CardContent>
+            </Card>
+        </div>
+    );
+};
+export default TrainDetail;

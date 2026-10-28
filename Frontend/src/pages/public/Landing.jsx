@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { ArrowRight, ArrowLeftRight } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
@@ -6,14 +6,66 @@ import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { StatTile } from '@/components/ui/StatTile';
 import { RouteConnector } from '@/components/ui/RouteConnector';
+import { API_BASE_URL } from '@/api/client';
 import { useBooking } from '@/context/BookingContext';
 export function Landing() {
     const navigate = useNavigate();
     const { setSearchParams } = useBooking();
+
+    /**
+     * Network figures and a few trains, read from the API.
+     *
+     * The stat strip used to read "12,480 trains", "98.4% on-time", "2.4M daily
+     * passengers" and "1,840 routes" as literals, with invented "+3.2%" deltas,
+     * and the band below it showed three invented trains under a "Live railway
+     * network / Network Operating Normal" heading. There is no on-time metric
+     * and no daily-passenger count anywhere in this system, so two of those
+     * numbers could not be made real — only counted, measured things are shown.
+     */
+    const [stats, setStats] = useState(null);
+    const [trains, setTrains] = useState([]);
+    const [statsFailed, setStatsFailed] = useState(false);
+
+    useEffect(() => {
+        let isMounted = true;
+
+        fetch(`${API_BASE_URL}/trains/stats`)
+            .then((res) => {
+                if (!res.ok) throw new Error(`stats ${res.status}`);
+                return res.json();
+            })
+            .then((body) => {
+                if (isMounted) setStats(body?.data ?? null);
+            })
+            .catch(() => {
+                if (isMounted) setStatsFailed(true);
+            });
+
+        fetch(`${API_BASE_URL}/trains/search?limit=3`)
+            .then((res) => {
+                if (!res.ok) throw new Error(`trains ${res.status}`);
+                return res.json();
+            })
+            .then((body) => {
+                if (isMounted) setTrains(Array.isArray(body?.data) ? body.data : []);
+            })
+            .catch(() => {
+                /* the band renders an honest empty state below */
+            });
+
+        return () => {
+            isMounted = false;
+        };
+    }, []);
+
+    const counts = stats?.counts;
+    const routes = stats?.popularRoutes ?? [];
+    const number = new Intl.NumberFormat('en-IN');
+
     const [fromStation, setFromStation] = useState('New Delhi (NDLS)');
     const [toStation, setToStation] = useState('Mumbai Central (MMCT)');
-    const [journeyDate, setJourneyDate] = useState('2026-10-15');
-    const [selectedClass, setSelectedClass] = useState('3A');
+    const [journeyDate, setJourneyDate] = useState('');
+    const [selectedClass, setSelectedClass] = useState('');
     const handleSwap = () => {
         const temp = fromStation;
         setFromStation(toStation);
@@ -118,19 +170,37 @@ export function Landing() {
         </form>
       </div>
 
-      {/* 3. STAT STRIP — 4 × StatTile */}
+      {/* 3. STAT STRIP — counted from the database, nothing invented. */}
       <section className="py-12 md:py-16">
         <div className="mx-auto w-full max-w-content px-4 sm:px-6 lg:px-8">
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            <StatTile label="Trains Running" value="12,480" delta="+3.2%"/>
-            <StatTile label="On-Time Precision" value="98.4%" delta="+0.6%"/>
-            <StatTile label="Daily Passengers" value="2.4M" delta="+5.1%"/>
-            <StatTile label="Connected Routes" value="1,840" delta="All India"/>
-          </div>
+          {statsFailed ? (
+            <p className="text-center text-caption text-ink-soft">
+              Network figures are unavailable right now.
+            </p>
+          ) : (
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              <StatTile
+                label="Trains in service"
+                value={counts ? number.format(counts.trains) : '—'}
+              />
+              <StatTile
+                label="Stations served"
+                value={counts ? number.format(counts.stations) : '—'}
+              />
+              <StatTile
+                label="Coaches mapped"
+                value={counts ? number.format(counts.coaches) : '—'}
+              />
+              <StatTile
+                label="Berths bookable"
+                value={counts ? number.format(counts.berths) : '—'}
+              />
+            </div>
+          )}
         </div>
       </section>
 
-      {/* 4. LIVE TRAIN STATUS PREVIEW — Dark Band */}
+      {/* 4. TRAIN PREVIEW — Dark Band, from GET /trains/search */}
       <section className="bg-ink py-16 text-white border-y border-white/10 blueprint">
         <div className="mx-auto w-full max-w-content px-4 sm:px-6 lg:px-8">
           <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-8">
@@ -139,72 +209,49 @@ export function Landing() {
                 Engine Telemetry
               </span>
               <h2 className="text-h2 font-bold tracking-tight text-white mt-1">
-                Live railway network
+                Trains in the network
               </h2>
             </div>
-            <Badge variant="success" showDot pulseDot size="md">
-              Network Operating Normal
+            <Badge variant="outline" size="md">
+              From the database
             </Badge>
           </div>
 
-          <div className="grid gap-6 md:grid-cols-3">
-            {[
-            {
-                number: '12951',
-                name: 'Mumbai Rajdhani',
-                from: 'NDLS',
-                to: 'MMCT',
-                speed: '130 km/h',
-                status: 'On Time',
-                dep: '16:55',
-                arr: '08:35',
-            },
-            {
-                number: '12009',
-                name: 'Shatabdi Express',
-                from: 'BCT',
-                to: 'ADI',
-                speed: '115 km/h',
-                status: 'On Time',
-                dep: '06:20',
-                arr: '12:55',
-            },
-            {
-                number: '22119',
-                name: 'Tejas Express',
-                from: 'CSMT',
-                to: 'MAO',
-                speed: '120 km/h',
-                status: 'Delayed · 8m',
-                dep: '05:50',
-                arr: '14:00',
-            },
-        ].map((train) => (<div key={train.number} className="rounded-card border border-white/10 bg-panel p-5 space-y-4 hover:border-royal/50 transition-colors">
-                <div className="flex items-center justify-between">
-                  <div>
+          {trains.length === 0 ? (
+            <p className="text-on-dark-soft">No trains are listed right now.</p>
+          ) : (
+            <div className="grid gap-6 md:grid-cols-3">
+              {trains.map((train) => (
+                <Link
+                  key={train.id ?? train.number}
+                  to={`/trains/${train.number}`}
+                  className="rounded-card border border-white/10 bg-panel p-5 space-y-4 hover:border-royal/50 transition-colors"
+                >
+                  <div className="flex items-center justify-between gap-3">
                     <h3 className="text-h4 font-semibold text-white">
                       {train.number} {train.name}
                     </h3>
+                    {train.type && (
+                      <span className="text-caption text-sky-bright">{train.type}</span>
+                    )}
                   </div>
-                  <span className="num text-caption font-semibold text-sky-bright">
-                    {train.speed}
-                  </span>
-                </div>
 
-                <div className="flex items-center gap-3">
-                  <span className="num text-xl font-bold text-white">{train.from}</span>
-                  <span className="relative h-0.5 flex-1 bg-gradient-to-r from-royal to-sky after:absolute after:-right-px after:-top-[3px] after:border-y-[4px] after:border-r-[6px] after:border-y-transparent after:border-r-sky"/>
-                  <span className="num text-xl font-bold text-white">{train.to}</span>
-                </div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {(train.runningDays ?? []).map((d) => (
+                      <span key={d} className="num text-caption text-on-dark-soft">{d.slice(0, 2)}</span>
+                    ))}
+                  </div>
 
-                <div className="flex items-center justify-between text-caption text-on-dark-soft pt-2 border-t border-white/10">
-                  <span className="num">Dep: {train.dep} · Arr: {train.arr}</span>
-                  <span className={train.status.includes('Delayed') ? 'text-error-strong font-semibold' : 'text-sky-bright'}>
-                    {train.status}
-                  </span>
-                </div>
-              </div>))}
-          </div>
+                  <div className="flex items-center justify-between text-caption text-on-dark-soft pt-2 border-t border-white/10">
+                    <span className="num">{train.runningDays?.length ?? 0} days a week</span>
+                    <span className={train.status === 'active' ? 'text-sky-bright' : 'text-error-strong'}>
+                      {train.status}
+                    </span>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          )}
         </div>
       </section>
 
@@ -267,18 +314,35 @@ export function Landing() {
           </div>
 
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
-            {[
-            { from: 'NDLS', to: 'MMCT', fromName: 'New Delhi', toName: 'Mumbai Central', fare: 820, time: '15h 40m', trains: 14 },
-            { from: 'MMCT', to: 'PUNE', fromName: 'Mumbai', toName: 'Pune Junction', fare: 340, time: '03h 35m', trains: 22 },
-            { from: 'HWH', to: 'NDLS', fromName: 'Howrah', toName: 'New Delhi', fare: 950, time: '17h 15m', trains: 10 },
-            { from: 'SBC', to: 'MAS', fromName: 'Bengaluru', toName: 'Chennai Central', fare: 480, time: '05h 00m', trains: 16 },
-        ].map((route) => (<div key={`${route.from}-${route.to}`} onClick={() => navigate(`/search?from=${route.fromName}&to=${route.toName}`)} className="group rounded-card border border-line-mid bg-white p-5 shadow-card hover:shadow-raised hover:border-royal/30 transition-all cursor-pointer">
-                <RouteConnector fromCode={route.from} toCode={route.to} fromName={route.fromName} toName={route.toName} duration={route.time} size="sm"/>
-                <div className="mt-4 pt-3 border-t border-line flex justify-between items-center text-sm">
-                  <span className="text-caption text-ink-soft">{route.trains} trains daily</span>
-                  <span className="num font-bold text-royal">From ₹{route.fare}</span>
+            {routes.length === 0 ? (
+              <p className="col-span-full text-caption text-ink-soft">
+                No corridor data is available.
+              </p>
+            ) : routes.map((route) => (
+              <Link
+                key={`${route.train_number}-${route.origin}`}
+                to={`/trains/${route.train_number}`}
+                className="group rounded-card border border-line-mid bg-white p-5 shadow-card hover:shadow-raised hover:border-royal/30 transition-all"
+              >
+                <div className="text-eyebrow font-semibold uppercase tracking-[0.16em] text-ink-soft">
+                  {route.train_number} {route.train_name}
                 </div>
-              </div>))}
+                <RouteConnector
+                  fromCode={null}
+                  toCode={null}
+                  fromName={route.origin}
+                  toName={route.destination}
+                  duration={null}
+                  size="sm"
+                />
+                <div className="mt-4 pt-3 border-t border-line flex justify-between items-center text-sm">
+                  <span className="text-caption text-ink-soft num">
+                    {Number(route.booked_count ?? 0).toLocaleString('en-IN')} bookings
+                  </span>
+                  <ArrowRight className="size-4 text-royal group-hover:translate-x-0.5 transition-transform" />
+                </div>
+              </Link>
+            ))}
           </div>
         </div>
       </section>

@@ -31,23 +31,40 @@ async function seedAdmin() {
 
         // Insert the admin user
         console.log(`[INFO] Inserting admin into database...`);
-        const [result] = await db.query(
-            `INSERT INTO users (full_name, email, phone, password, role, status)
-             VALUES (?, ?, ?, ?, ?, ?)`,
+
+        /**
+         * `db.query` returns `[results, metadata]`, but for a raw INSERT driven
+         * by `replacements` Sequelize nests one level deeper still — `results` is
+         * itself an array, so the shape is `[[ResultSetHeader], metadata]`.
+         *
+         * Destructuring once and reading `.insertId` off the result therefore
+         * yields undefined even on a successful insert, which is how this script
+         * used to print "ID: undefined" after reporting success. Unwrap until a
+         * scalar, which covers both shapes.
+         */
+        const [rows] = await db.query(
+            `INSERT INTO users (full_name, email, phone, password, role, status, is_email_verified, email_verified_at)
+             VALUES (?, ?, ?, ?, ?, ?, 1, NOW())`,
             [
                 'System Administrator',
                 adminEmail,
                 adminPhone,
                 hashedPassword,
-                'admin', // Note: enum is 'passenger', 'admin' based on 000_create_users.sql
+                'admin', // enum is 'passenger' | 'admin' per 000_create_users.sql
                 'active'
             ]
         );
 
+        const result = Array.isArray(rows) ? rows[0] : rows;
+        const insertedId = result?.insertId ?? null;
+        if (!insertedId) {
+            throw new Error('Insert reported success but returned no id; the admin row may be incomplete.');
+        }
+
         console.log(`✅ Successfully created ADMIN user!`);
         console.log(`   Email:    ${adminEmail}`);
         console.log(`   Password: ${rawPassword}`);
-        console.log(`   ID:       ${result.insertId}`);
+        console.log(`   ID:       ${insertedId}`);
         console.log('\nYou can now log in at /admin/login');
 
     } catch (error) {

@@ -19,32 +19,36 @@ BEGIN
         SET v_offset = p_offset;
     END IF;
 
+    -- `stations.state` became `state_id` when migration 011 normalised the
+    -- schema, so the name comes from the `states` lookup. The output column is
+    -- still called `state` because that is what the API and the admin screen
+    -- read.
     SELECT 
-        id,
-        station_code,
-        station_name,
-        city,
-        state,
-        timezone,
-        status
-    FROM stations
-    WHERE status = 'active'
+        s.id,
+        s.station_code,
+        s.station_name,
+        s.city,
+        s.state,
+        s.timezone,
+        s.status
+    FROM stations s
+    WHERE s.status = 'active'
       AND (
           p_search IS NULL 
           OR p_search = '' 
-          OR station_code LIKE CONCAT('%', p_search, '%')
-          OR station_name LIKE CONCAT('%', p_search, '%')
-          OR city LIKE CONCAT('%', p_search, '%')
+          OR s.station_code LIKE CONCAT('%', p_search, '%')
+          OR s.station_name LIKE CONCAT('%', p_search, '%')
+          OR s.city LIKE CONCAT('%', p_search, '%')
       )
     ORDER BY 
         CASE 
             WHEN p_search IS NULL OR p_search = '' THEN 3
-            WHEN station_code = UPPER(p_search) THEN 0
-            WHEN station_code LIKE CONCAT(UPPER(p_search), '%') THEN 1
-            WHEN station_name LIKE CONCAT(p_search, '%') THEN 2
+            WHEN s.station_code = UPPER(p_search) THEN 0
+            WHEN s.station_code LIKE CONCAT(UPPER(p_search), '%') THEN 1
+            WHEN s.station_name LIKE CONCAT(p_search, '%') THEN 2
             ELSE 3
         END,
-        station_name ASC
+        s.station_name ASC
     LIMIT v_limit OFFSET v_offset;
 END$$
 DELIMITER ;
