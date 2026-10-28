@@ -43,8 +43,8 @@ async function seedAdmin() {
          * scalar, which covers both shapes.
          */
         const [rows] = await db.query(
-            `INSERT INTO users (full_name, email, phone, password, role, status)
-             VALUES (?, ?, ?, ?, ?, ?)`,
+            `INSERT INTO users (full_name, email, phone, password, role, status, is_email_verified, email_verified_at)
+             VALUES (?, ?, ?, ?, ?, ?, 1, NOW())`,
             [
                 'System Administrator',
                 adminEmail,

@@ -5,17 +5,25 @@ const {
   getTrainDetails,
   getTrainStatus,
   getNetworkStats,
+  getTrainSchedule,
+  getTrainAvailability,
+  getTrainFare,
+  getTrainClasses,
+  getQuotas,
 } = require('../controllers/trainController');
 
 const router = express.Router();
 
 router.get('/between', searchTrainsBetween);
 router.get('/search', searchTrains);
+router.get('/quotas', getQuotas);
 router.get('/status/:trainNo', getTrainStatus);
-// Declared before `/:trainNo`, which would otherwise swallow it — the param
-// route matches any single segment, so `/stats` would be read as a train called
-// "stats" and answer 404.
+// Declared before `/:trainNo`, which would otherwise swallow it
 router.get('/stats', getNetworkStats);
+router.get('/:trainNo/schedule', getTrainSchedule);
+router.get('/:trainNo/availability', getTrainAvailability);
+router.get('/:trainNo/fare', getTrainFare);
+router.get('/:trainNo/classes', getTrainClasses);
 router.get('/:trainNo', getTrainDetails);
 
 module.exports = router;

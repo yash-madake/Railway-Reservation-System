@@ -14,6 +14,7 @@ const adminRoutes = require('./routes/adminRoutes');
 const paymentRoutes = require('./routes/paymentRoutes');
 const bookingRoutes = require('./routes/bookingRoutes');
 const seatRoutes = require('./routes/seatRoutes');
+const { getQuotas } = require('./controllers/trainController');
 const env = require('./config/env');
 const { checkRedisHealth, redis } = require('./config/redis');
 const adminMiddleware = require('./middleware/adminMiddleware');
@@ -48,9 +49,10 @@ app.use('/profile', userRoutes);
 // Team 7 - Admin Routes
 app.use('/admin', authMiddleware, adminMiddleware, adminRoutes);
 
-// Team 2 - Railway Search & Station Discovery routes
+// Team 2 & 3 - Railway Search & Train Details/Availability routes
 app.use('/stations', stationRoutes);
 app.use('/trains', trainRoutes);
+app.get('/quotas', getQuotas);
 
 // Team 5 - Payment & Transactions
 app.use('/payments', paymentRoutes);

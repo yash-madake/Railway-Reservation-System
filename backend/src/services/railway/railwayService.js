@@ -21,9 +21,8 @@ class RailwayService {
     let countQuery = `SELECT COUNT(*) as total FROM stations WHERE status = 'active'`;
     let dataQuery = `
       SELECT s.id, s.station_code as code, s.station_name as name, s.city,
-             st.state_name as state, s.timezone, s.status
+             s.state, s.timezone, s.status
       FROM stations s
-      LEFT JOIN states st ON st.state_id = s.state_id
       WHERE s.status = 'active'
     `;
     const params = [];
@@ -237,10 +236,9 @@ class RailwayService {
     // 2. Fetch full route
     const [routes] = await pool.query(
       `SELECT r.stop_sequence, r.arrival_time, r.departure_time, r.distance_km, r.day_offset, r.halt_minutes, r.platform,
-              s.id as station_id, s.station_code, s.station_name, s.city, st.state_name as state
+              s.id as station_id, s.station_code, s.station_name, s.city, s.state
        FROM train_routes r
        INNER JOIN stations s ON s.id = r.station_id
-       LEFT JOIN states st ON st.state_id = s.state_id
        WHERE r.train_id = ?
        ORDER BY r.stop_sequence ASC;`,
       [train.id]
@@ -260,9 +258,8 @@ class RailwayService {
     // transitive dependency, so the name belongs to the class, not to the
     // train/class pairing.
     const [classes] = await pool.query(
-      `SELECT tc.class_code, cl.class_name, tc.base_fare, tc.total_seats, tc.available_seats
+      `SELECT tc.class_code, tc.class_name, tc.base_fare, tc.total_seats, tc.available_seats
          FROM train_classes tc
-         JOIN classes cl ON cl.class_code = tc.class_code
         WHERE tc.train_id = ?;`,
       [train.id]
     );
