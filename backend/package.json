@@ -25,6 +25,7 @@
     "db:seed:coaches": "node src/scripts/seedCoaches.js",
     "db:seed:network": "node src/scripts/seedExpandedNetwork.js",
     "db:seed:team3": "node src/scripts/seedTeam3Datasets.js",
+    "db:seed:full": "node src/scripts/seedFullRailwayDatasets.js",
     "db:seed:bookings": "node src/scripts/seedBookings.js",
     "db:seed:undo": "sequelize-cli db:seed:undo:all",
     "db:reset": "npm run db:migrate && npm run db:seed",
